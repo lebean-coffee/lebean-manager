@@ -816,11 +816,33 @@ table.heat tr.on td:first-child b{text-decoration:underline;text-underline-offse
 [data-style=sharp] table.heat td{border-radius:1px}
 .vtag{display:inline-block;font-size:11px;font-weight:700;padding:1px 6px;border-radius:5px;background:var(--sunk);color:var(--ink-2)}
 .vtag.v0{background:var(--info-bg);color:var(--info)}.vtag.v1{background:var(--warn-bg);color:var(--warn)}.vtag.v2{background:var(--good-bg);color:var(--good)}.vtag.v3{background:var(--bad-bg);color:var(--bad)}
-.daytable table{font-variant-numeric:tabular-nums}
-.daytable td,.daytable th{white-space:nowrap;padding-left:8px;padding-right:8px}.daytable td:first-child,.daytable th:first-child{padding-left:14px}.daytable td:nth-child(2)>div{white-space:normal;min-width:120px;max-width:180px}
+.daytable{border:1px solid var(--line);border-radius:var(--r,12px);background:var(--surface)}
+.daytable table{width:100%;border-collapse:collapse;table-layout:auto;font-size:12px;font-variant-numeric:tabular-nums}
+.daytable th,.daytable td{padding:6px 4px;white-space:normal;overflow-wrap:normal;word-break:normal;vertical-align:top;text-align:left;border-bottom:1px solid var(--line-soft)}
+.daytable .n{white-space:nowrap}
+.daytable th{font-size:11px;font-weight:600;color:var(--ink-2);background:var(--th);line-height:1.25;overflow-wrap:normal}
+.daytable .r{text-align:right}
+.daytable th:first-child,.daytable td:first-child{padding-left:10px}.daytable th:last-child,.daytable td:last-child{padding-right:10px}
+@media (min-width:761px){dialog:has(.daytable){width:min(1240px,calc(100vw - 32px));max-width:none}}
+.daytable .dnote{font-size:10.5px;line-height:1.3}
 .daytable tr.muted td{color:var(--muted)}
 .daytable tr.vchange td{border-top:2px solid var(--c2)}
-.daytable tfoot td{font-weight:600;border-top:1px solid var(--line)}
+.daytable tfoot td{font-weight:600;border-top:1px solid var(--line);border-bottom:0}
+@media (max-width:760px){
+  .daytable{border:0;background:none}
+  .daytable thead{display:none}
+  .daytable table,.daytable tbody,.daytable tfoot,.daytable tr{display:block}
+  .daytable tr{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:8px;background:var(--surface)}
+  .daytable td{display:flex;justify-content:space-between;gap:12px;border:0;padding:2px 0;text-align:right}
+  .daytable td::before{content:attr(data-label);color:var(--muted);text-align:left;font-weight:500}
+  .daytable td:empty,.daytable tfoot td:not([data-label]){display:none}
+  .daytable td.dday{font-weight:700;padding-bottom:4px}
+  .daytable td.dday::before{content:none}
+  .daytable tr.vchange{border-top:3px solid var(--c2)}
+  .daytable tr.vchange td{border-top:0}
+}
+@page wide{size:A4 landscape;margin:10mm}
+@media print{html:has(#printArea .payslip),body:has(#printArea .payslip),#printArea:has(.payslip){page:wide}#printArea .daytable table{font-size:9.5px}#printArea .daytable th{font-size:9px}#printArea .daytable tr{break-inside:avoid}#printArea .daytable tfoot{display:table-row-group}}
 .att .dirty{border-color:var(--c2);background:color-mix(in srgb,var(--c2) 14%,var(--field))}
 .unsaved{color:var(--warn);font-weight:600}
 .note.attdraft{display:flex;align-items:center;justify-content:space-between;gap:10px 16px;flex-wrap:wrap;margin-bottom:12px}
@@ -1166,10 +1188,15 @@ function termsOf(r) {
   return {id: r.id, effective_date: r.effective_date, daily: round(daily, 2), reg, brk: num0(r.break_hours) ?? brk0,
     ot: num0(r.ot_rate) ?? round(hourly * (+st.otMult || 1.25), 2), ut: num0(r.ut_rate) ?? round(hourly, 2), note: r.note || '', created_at: r.created_at || '', legacy, pay_type: r.pay_type, rate: r.rate};
 }
-const payVersions = memo(empId => q('SELECT * FROM pay_rates WHERE employee_id=? ORDER BY effective_date, id', [empId]).map((r, i) => ({...termsOf(r), no: i + 1})));
+const payVersions = memo(empId => { const rows = q('SELECT * FROM pay_rates WHERE employee_id=? ORDER BY effective_date, id', [empId]), ids = rows.map(r => r.id).sort((a, b) => a - b);
+  return rows.map(r => ({...termsOf(r), no: ids.indexOf(r.id) + 1})); });   // listed by effective date; numbered in the order they were entered
+const termsNow = empId => termsOn(empId, today());
 function termsOn(empId, date) { const vs = payVersions(empId); if (!vs.length) return null; let t = vs[0]; for (const v of vs) if (v.effective_date <= date) t = v; return t; }
 const termsLine = t => t ? `${peso(t.daily)} a day, ${fq(t.reg)} regular hrs, ${fq(t.brk)} hr unpaid break, overtime ${peso(t.ot)}/hr, undertime ${peso(t.ut)}/hr` : 'No pay terms';
-const dayDiff = (t, tin, tout) => { const span = calcHours(tin, tout); if (!t || !tin || !tout) return null; const worked = round(Math.max(0, span - t.brk), 2), d = round(worked - t.reg, 2); return {span, worked, ot: Math.max(0, d), ut: Math.max(0, -d)}; };
+// the unpaid break on a day: the recorded one once the day has a time, otherwise the default from the pay terms
+const hasTimes = a => !!(a && (a.time_in || a.time_out));
+const dayBreak = (a, t) => hasTimes(a) && a.break_hours != null && a.break_hours !== '' ? Math.max(0, +a.break_hours) : t ? t.brk : 0;
+const dayDiff = (t, tin, tout, brk = t && t.brk) => { const span = calcHours(tin, tout); if (!t || !tin || !tout) return null; const worked = round(Math.max(0, span - brk), 2), d = round(worked - t.reg, 2); return {span, brk, worked, ot: Math.max(0, d), ut: Math.max(0, -d)}; };
 const leaveUsed = (empId, year) => round(val(`SELECT COALESCE(SUM(days),0) FROM leaves WHERE employee_id=? AND status='approved' AND paid=1 AND substr(start_date,1,4)=?`, [empId, String(year)]) || 0, 2);
 function calcHours(a, b) {
   if (!a || !b) return 0;
@@ -1935,13 +1962,14 @@ function attSheet() {
   const drafts = {};
   emps.forEach(e => {
     const k = `${e.id}|${d}`, dr = (S.attDraft || {})[k]; if (!dr) return;
-    const sv = recs[e.id] || {}, base = f => f === 'break_hours' ? (sv.time_in || sv.time_out ? String(sv.break_hours || 0) : '') : String(sv[f] ?? '');
+    const sv = recs[e.id] || {}, base = f => f === 'break_hours' ? String(dayBreak(sv, termsOn(e.id, d))) : String(sv[f] ?? '');
     const dirty = Object.keys(dr).filter(f => String(dr[f] ?? '') !== base(f));
     if (dirty.length) drafts[e.id] = {vals: dr, dirty}; else delete S.attDraft[k];
   });
   const V = e => ({...(recs[e.id] || {}), ...(drafts[e.id] ? drafts[e.id].vals : {})});
   const dcls = (e, f) => drafts[e.id] && drafts[e.id].dirty.includes(f) ? ' dirty' : '';
-  const brkVal = e => { const dr = drafts[e.id] && drafts[e.id].vals; if (dr && 'break_hours' in dr) return dr.break_hours; const r = recs[e.id]; return r && (r.time_in || r.time_out) ? r.break_hours || 0 : ''; };
+  const brkVal = e => { const dr = drafts[e.id] && drafts[e.id].vals; if (dr && 'break_hours' in dr && String(dr.break_hours).trim() !== '') return num(dr.break_hours); return dayBreak(recs[e.id], termsOn(e.id, d)); };
+  const lockB = lockT ? ' disabled title="The break starts at each person’s pay terms. Only the owner can change it, like the times."' : '';
   const ckCache = {}, clocked = r => { if (!r || !r.id || !can('attTimes') || !cloudOn()) return null; if (r.id in ckCache) return ckCache[r.id];
     const a = q(`SELECT action, after FROM audit WHERE module='Attendance' AND entity_id=? AND action IN ('Clocked in','Clocked out') ORDER BY id`, [r.id]); const o = {};
     a.forEach(x => { const v = J(x.after) || {}; if (x.action === 'Clocked in' && v.time_in) o.in = v.time_in; if (x.action === 'Clocked out' && v.time_out) o.out = v.time_out; });
@@ -1952,16 +1980,16 @@ function attSheet() {
   return `<div class="bar-row"><div class="period"><button class="btn icon" data-act="attDay" data-n="-1" aria-label="Previous day">${ic('left')}</button><input type="date" data-f="att.date" value="${d}" aria-label="Date"><button class="btn icon" data-act="attDay" data-n="1" aria-label="Next day">${ic('right')}</button>${isToday ? '' : '<button class="btn sm ghost" data-act="attToday">Today</button>'}
     <span class="lbl2">${esc(parseD(d).toLocaleDateString('en-PH', {weekday: 'long', month: 'long', day: 'numeric'}))} · ${marked} of ${emps.length} marked</span></div>
     <span class="push actions">${marked < emps.length ? `<button class="btn sm" data-act="markAll" data-date="${d}">Mark the rest present</button>` : ''}<button class="btn sm" data-act="fillAttendance">Fill several days</button></span></div>
-  <p class="small muted" style="margin:-6px 0 12px">${cloudOn() ? `Clock in and Clock out use the database time in Philippine time (UTC+8)${S.clockOk ? `, now <b class="clocknow">${esc(fmtTime(shopNow().time))}</b>` : ''}. ${lockT ? 'Each person can clock in once and out once a day. Only the owner can change times; hours and overtime are worked out from them.' : 'Staff and managers can clock in once and out once a day. You can type over any time; your changes are recorded in History as overrides.'} Worked hours are time in to time out minus each person’s unpaid break; overtime and undertime are measured against their regular hours.` : `Saves as you go. Hours are time in to time out minus the unpaid break. Overtime fills in from hours past ${st.regHours}; type over it if needed.`}</p>
+  <p class="small muted" style="margin:-6px 0 12px">${cloudOn() ? `Clock in and Clock out use the database time in Philippine time (UTC+8)${S.clockOk ? `, now <b class="clocknow">${esc(fmtTime(shopNow().time))}</b>` : ''}. ${lockT ? 'Each person can clock in once and out once a day. Only the owner can change times and breaks; hours, overtime and undertime are worked out from them.' : 'Staff and managers can clock in once and out once a day. You can type over any time; your changes are recorded in History as overrides.'} Worked hours are time in to time out minus the unpaid break, which starts at each person’s pay terms and can be changed for the day; overtime and undertime are measured against their regular hours.` : `Saves as you go. Hours are time in to time out minus the unpaid break. Overtime fills in from hours past ${st.regHours}; type over it if needed.`}</p>
   ${locked ? `<div class="note" style="margin-bottom:12px">This day is in finalized payroll run #${locked.id}. Edits are recorded in history but won’t change that payroll.</div>` : ''}
   ${draftNote}${T([
     {h: 'Employee', main: 1, f: e => `<b>${esc(e.name)}</b> <span class="small muted">${esc(e.role || '')}</span>${lv[e.id] ? ' ' + chip(`On leave: ${lv[e.id].type}${lv[e.id].paid ? '' : ' (unpaid)'}`, 'info') : ''}${drafts[e.id] ? ' ' + chip('Not saved', 'warn') : ''}`},
     {h: 'Status', f: e => `<select class="${dcls(e, 'status')}" data-att="status" data-emp="${e.id}" data-date="${d}" aria-label="Status for ${esc(e.name)}"><option value="">${lv[e.id] ? 'On leave' : 'Not marked'}</option>${opts(Object.entries(ATT), V(e).status)}</select>`},
     {h: 'Time in', f: e => `<input type="time" class="${dcls(e, 'time_in')}" data-att="time_in" data-emp="${e.id}" data-date="${d}" value="${esc(V(e).time_in || '')}" aria-label="Time in"${lockA}>`},
     {h: 'Time out', f: e => `<input type="time" class="${dcls(e, 'time_out')}" data-att="time_out" data-emp="${e.id}" data-date="${d}" value="${esc(V(e).time_out || '')}" aria-label="Time out"${lockA}>`},
-    {h: 'Break', r: 1, f: e => { const t = termsOn(e.id, d); return `<span class="muted" data-tip="Unpaid break from ${esc(e.name)}’s pay terms">${t ? fq(t.brk) + ' hr' : ''}</span>`; }},
-    {h: 'Worked', r: 1, f: e => { const v = V(e), x = dayDiff(termsOn(e.id, d), v.time_in, v.time_out); if (!x) return ''; return `<span class="${drafts[e.id] ? 'unsaved' : ''}" data-tip="${esc(`${fq(x.span)} hrs clocked, minus ${fq(termsOn(e.id, d).brk)} hr unpaid break${drafts[e.id] ? ' (not saved yet)' : ''}`)}">${fq(x.worked)}</span>`; }},
-    {h: 'OT / UT', r: 1, f: e => { const v = V(e), t = termsOn(e.id, d), x = dayDiff(t, v.time_in, v.time_out); if (!x) return ''; return x.ot ? `<span class="plus" data-tip="${esc(`Over ${fq(t.reg)} regular hrs: ${fq(x.ot)} × ${peso(t.ot)} = ${peso(x.ot * t.ot)}`)}">+${fq(x.ot)} OT</span>` : x.ut ? `<span class="minus" data-tip="${esc(`Under ${fq(t.reg)} regular hrs: ${fq(x.ut)} × ${peso(t.ut)} = −${peso(x.ut * t.ut)}`)}">−${fq(x.ut)} UT</span>` : '<span class="muted">On time</span>'; }},
+    {h: 'Break (hrs)', f: e => { const t = termsOn(e.id, d), b = brkVal(e), off = t && b !== t.brk; return `<input type="number" class="brk${dcls(e, 'break_hours')}" data-att="break_hours" data-emp="${e.id}" data-date="${d}" value="${b}" min="0" max="12" step="0.25" inputmode="decimal" aria-label="Unpaid break, hours"${lockB || (hasTimes(V(e)) ? '' : ' disabled title="Set once the day has a time in or out"')} data-tip="${esc(t ? `Unpaid break. ${e.name}’s pay terms default: ${fq(t.brk)} hr` : 'Unpaid break')}">${off ? `<div class="small muted">Default ${fq(t.brk)}</div>` : ''}`; }},
+    {h: 'Worked', r: 1, f: e => { const v = V(e), x = dayDiff(termsOn(e.id, d), v.time_in, v.time_out, brkVal(e)); if (!x) return ''; return `<span class="${drafts[e.id] ? 'unsaved' : ''}" data-tip="${esc(`${fq(x.span)} hrs clocked, minus ${fq(x.brk)} hr unpaid break${drafts[e.id] ? ' (not saved yet)' : ''}`)}">${fq(x.worked)}</span>`; }},
+    {h: 'OT / UT', r: 1, f: e => { const v = V(e), t = termsOn(e.id, d), x = dayDiff(t, v.time_in, v.time_out, brkVal(e)); if (!x) return ''; return x.ot ? `<span class="plus" data-tip="${esc(`Over ${fq(t.reg)} regular hrs: ${fq(x.ot)} × ${peso(t.ot)} = ${peso(x.ot * t.ot)}`)}">+${fq(x.ot)} OT</span>` : x.ut ? `<span class="minus" data-tip="${esc(`Under ${fq(t.reg)} regular hrs: ${fq(x.ut)} × ${peso(t.ut)} = −${peso(x.ut * t.ut)}`)}">−${fq(x.ut)} UT</span>` : '<span class="muted">On time</span>'; }},
     {h: 'Note', f: e => `<input class="anote${dcls(e, 'note')}" data-att="note" data-emp="${e.id}" data-date="${d}" value="${esc(V(e).note || '')}" aria-label="Note">`},
     {h: '', cls: 'act', f: e => { const r = recs[e.id] || {};
       if (drafts[e.id]) return `<span class="rowacts"><button class="btn sm primary" data-act="attRowSave" data-emp="${e.id}" data-date="${d}">Save</button><button class="btn sm ghost" data-act="attRowReset" data-emp="${e.id}" data-date="${d}" title="Put back the saved values">Reset</button></span>`;
@@ -2043,7 +2071,9 @@ function attSave(empId, date, patch) {
   const before = one('SELECT * FROM attendance WHERE employee_id=? AND date=?', [empId, date]);
   const tt = termsOn(empId, date);   // break and regular hours are set per employee
   const row = {status: '', time_in: '', time_out: '', hours: 0, ot_hours: 0, note: '', ...(before || {}), ...patch};
-  row.break_hours = tt ? tt.brk : Math.max(0, num(st.breakHours));
+  const brk0 = tt ? tt.brk : Math.max(0, num(st.breakHours));
+  if ('break_hours' in patch && String(patch.break_hours ?? '').trim() !== '') { const b = num(patch.break_hours); need(b >= 0 && b <= 12, 'Enter a break from 0 to 12 hours.'); row.break_hours = round(b, 2); }
+  else row.break_hours = 'break_hours' in patch || !hasTimes(before) ? brk0 : Math.max(0, num(before.break_hours));
   { const span = calcHours(row.time_in, row.time_out); row.hours = span ? Math.max(0, round(span - row.break_hours, 2)) : 0; row.ot_hours = Math.max(0, round(row.hours - (tt ? tt.reg : st.regHours), 2)); }
   if (!row.status && (row.time_in || row.time_out)) row.status = 'present';
   const pick = r => r && {status: r.status, time_in: r.time_in || '', time_out: r.time_out || '', break_hours: r.break_hours || 0, hours: r.hours || 0, ot_hours: r.ot_hours || 0, note: r.note || ''};
@@ -2057,14 +2087,14 @@ function attSave(empId, date, patch) {
     let id;
     if (before) { id = before.id; update('attendance', id, {...after, updated_at: nowTs()}); }
     else id = insert('attendance', {employee_id: empId, date, ...after, updated_at: nowTs()});
-    const ovr = cloudOn() && before && (before.time_in || before.time_out) && (before.time_in !== after.time_in || before.time_out !== after.time_out);
-    audit('Attendance', ovr ? 'Owner override' : before ? 'Updated' : 'Recorded', id, `${e.name}, ${prettyDate(date)}: ${ATT[after.status] || 'no status'}${after.time_in ? ' ' + fmtTime(after.time_in) : ''}${after.time_out ? ' to ' + fmtTime(after.time_out) : ''}`, pick(before), after, {employee_id: empId, date});
+    const ovr = cloudOn() && before && (before.time_in || before.time_out) && (before.time_in !== after.time_in || before.time_out !== after.time_out || +before.break_hours !== +after.break_hours);
+    audit('Attendance', ovr ? 'Owner override' : before ? 'Updated' : 'Recorded', id, `${e.name}, ${prettyDate(date)}: ${ATT[after.status] || 'no status'}${after.time_in ? ' ' + fmtTime(after.time_in) : ''}${after.time_out ? ' to ' + fmtTime(after.time_out) : ''}${hasTimes(after) ? `, ${fq(after.break_hours)} hr break` : ''}`, pick(before), after, {employee_id: empId, date});
   });
 }
 function employeesView() {
   const all = F('emp.all') === '1', list = employees(all), yr = new Date().getFullYear();
   if (!val('SELECT COUNT(*) FROM employees')) return noStaff();
-  regCsv('employees', 'employees', () => list.map(e => { const vs = payVersions(e.id), t = vs[vs.length - 1] || {}; return {...e, version: t.no, daily: t.daily, reg: t.reg, brk: t.brk, ot: t.ot, ut: t.ut, leave_used: leaveUsed(e.id, yr), active: e.active ? 'yes' : 'no'}; }),
+  regCsv('employees', 'employees', () => list.map(e => { const t = termsNow(e.id) || {}; return {...e, version: t.no, daily: t.daily, reg: t.reg, brk: t.brk, ot: t.ot, ut: t.ut, leave_used: leaveUsed(e.id, yr), active: e.active ? 'yes' : 'no'}; }),
     [['name', 'Name'], ['role', 'Role'], ['start_date', 'Start date'], ['version', 'Pay terms version'], ['daily', 'Daily rate'], ['reg', 'Regular hours'], ['brk', 'Unpaid break hours'], ['ot', 'OT bonus per hour'], ['ut', 'UT penalty per hour'], ['leave_credits', 'Leave days per year'], ['leave_used', `Paid leave used ${yr}`], ['active', 'Active'], ['notes', 'Notes']]);
   regCsv('rates', 'pay-terms-history', () => employees(true).flatMap(e => payVersions(e.id).map(v => ({name: e.name, ...v}))),
     [['name', 'Employee'], ['no', 'Version'], ['effective_date', 'Effective'], ['daily', 'Daily rate'], ['reg', 'Regular hours'], ['brk', 'Unpaid break hours'], ['ot', 'OT bonus per hour'], ['ut', 'UT penalty per hour'], ['note', 'Reason'], ['created_at', 'Entered']]);
@@ -2072,7 +2102,7 @@ function employeesView() {
   ${bulkBar('emp', [['bulkAdj', 'Add adjustment'], ['bulkDeactivate', 'Mark inactive', 'warn']], 'person')}
   ${T([selCol('emp', list),
     {h: 'Name', main: 1, f: e => `<b>${esc(e.name)}</b> <span class="muted small">${esc(e.role || '')}</span> ${e.active ? '' : chip('Inactive')}`},
-    {h: 'Pay terms', f: e => { const vs = payVersions(e.id), t = vs[vs.length - 1]; return t ? `${peso(t.daily)} a day <span class="muted small">v${t.no}</span><div class="small muted">${fq(t.reg)} hrs + ${fq(t.brk)} hr break, OT ${peso(t.ot)}/hr, UT ${peso(t.ut)}/hr</div>` : chip('No pay terms', 'bad'); }},
+    {h: 'Pay terms', f: e => { const t = termsNow(e.id), nx = payVersions(e.id).filter(v => v.effective_date > today()).pop(); return t ? `${peso(t.daily)} a day <span class="muted small">v${t.no}</span><div class="small muted">${fq(t.reg)} hrs + ${fq(t.brk)} hr break, OT ${peso(t.ot)}/hr, UT ${peso(t.ut)}/hr</div>${nx ? `<div class="small">${chip(`v${nx.no} from ${shortDate(nx.effective_date)}`, 'info')}</div>` : ''}` : chip('No pay terms', 'bad'); }},
     {h: 'Since', f: e => esc(prettyDate(e.start_date))},
     {h: `Leave ${yr}`, r: 1, f: e => `${fq(leaveUsed(e.id, yr))} of ${fq(e.leave_credits)} used`},
     {h: '', cls: 'act', f: e => `<button class="btn sm" data-act="changeRate" data-id="${e.id}">Change pay terms</button> <button class="btn sm ghost" data-act="editEmployee" data-id="${e.id}">Edit</button>`}
@@ -2088,9 +2118,14 @@ function termsFields(t = {}) {
     <p class="hint" style="margin:0">Each worked day pays the daily rate, plus the overtime bonus for every hour over the regular hours, minus the undertime penalty for every hour under. Hours worked are time in to time out minus the unpaid break.</p>`;
 }
 function termsHint(f) {
+  // overtime and undertime follow the daily rate (×1.25 and ×1 of the hourly rate) until the owner types their own
+  const sug = () => { const dly = num(f.daily.value), reg = num(f.reg.value) || 8, h = dly / reg; return dly > 0 ? {ot: round(h * 1.25, 2), ut: round(h, 2)} : null; };
+  const s0 = sug(); ['ot', 'ut'].forEach(k => { f[k].dataset.auto = f[k].value === '' || (s0 && Math.abs(num(f[k].value) - s0[k]) < 0.011) ? '1' : ''; f[k].addEventListener('input', () => f[k].dataset.auto = ''); });
+  const follow = e => { if (!['daily', 'reg'].includes(e.target.name)) return; const x = sug(); if (x) ['ot', 'ut'].forEach(k => { if (f[k].dataset.auto) f[k].value = x[k]; }); };
+  f.addEventListener('input', follow);
   const upd = () => { const dly = num(f.daily.value), reg = num(f.reg.value) || 8; if (!(dly > 0)) { $('#otSug').textContent = $('#utSug').textContent = ''; return; } const h = dly / reg;
     $('#otSug').innerHTML = `Hourly ${peso(h)}; ×1.25 is ${peso(h * 1.25)} <a href="#" data-fill="ot" data-v="${round(h * 1.25, 2)}">use</a>`; $('#utSug').innerHTML = `Hourly is ${peso(h)} <a href="#" data-fill="ut" data-v="${round(h, 2)}">use</a>`; };
-  f.addEventListener('input', upd); f.addEventListener('click', e => { const a = e.target.closest('[data-fill]'); if (!a) return; e.preventDefault(); f[a.dataset.fill].value = a.dataset.v; }); upd();
+  f.addEventListener('input', upd); f.addEventListener('click', e => { const a = e.target.closest('[data-fill]'); if (!a) return; e.preventDefault(); f[a.dataset.fill].value = a.dataset.v; f[a.dataset.fill].dataset.auto = '1'; }); upd();
 }
 function readTerms(d) {
   const t = {daily: num(d.daily), reg: num(d.reg), brk: num(d.brk), ot: num(d.ot), ut: num(d.ut)};
@@ -2135,9 +2170,10 @@ function editEmployee(id) {
     }});
 }
 function changeRate(id) {
-  const e = one('SELECT * FROM employees WHERE id=?', [id]), vs = payVersions(id), cur = vs[vs.length - 1];
+  const e = one('SELECT * FROM employees WHERE id=?', [id]), vs = payVersions(id), cur = vs[vs.length - 1], now = termsNow(id);
   modal({title: `Change pay terms for ${e.name}`, submit: 'Save new version', wide: true,
-    body: `<p style="margin:0">Current: ${cur ? `<b>version ${cur.no}</b> from ${esc(prettyDate(cur.effective_date))}: ${esc(termsLine(cur))}` : 'none yet'}</p>
+    body: `<p style="margin:0">In effect today: ${now ? `<b>version ${now.no}</b> from ${esc(prettyDate(now.effective_date))}: ${esc(termsLine(now))}` : 'none yet'}</p>
+    ${cur && now && cur.id !== now.id ? `<p class="note small" style="margin:0">Already scheduled: <b>version ${cur.no}</b> from ${esc(prettyDate(cur.effective_date))}: ${esc(termsLine(cur))}</p>` : ''}
     <label class="f">Effective from <small>Days from this date use the new terms; earlier days keep the old ones</small><input type="date" name="effective_date" value="${today()}" required></label>
     ${termsFields(cur ? {daily: cur.daily, reg: cur.reg, brk: cur.brk, ot: cur.ot, ut: cur.ut} : {})}
     <label class="f">Reason<input name="note" placeholder="e.g. Regularization, annual increase, new shift length"></label>`,
@@ -2149,7 +2185,8 @@ function changeRate(id) {
         const rid = insert('pay_rates', {employee_id: id, effective_date: d.effective_date, ...termsRow(t), note: d.note.trim(), created_at: nowTs()});
         audit('Staff', 'Pay terms changed', id, `${e.name}: new pay terms from ${prettyDate(d.effective_date)} (${termsLine(t)})`, cur ? {version: cur.no, effective_date: cur.effective_date, ...termsRow(cur)} : null, {version: vs.length + 1, effective_date: d.effective_date, ...termsRow(t)}, {reason: d.note || null, rate_id: rid});
       });
-      toast(`Version ${vs.length + 1} saved. Days from ${prettyDate(d.effective_date)} use it.`);
+      const fin = q(`SELECT r.id FROM payroll_runs r JOIN payroll_lines l ON l.run_id=r.id WHERE r.status='finalized' AND l.employee_id=? AND r.period_end>=? ORDER BY r.id`, [id, d.effective_date]).map(r => '#' + r.id);
+      toast(`Version ${vs.length + 1} saved. Days from ${prettyDate(d.effective_date)} use it.${fin.length ? ` ${fin.length === 1 ? `Finalized payroll ${fin[0]} already covers some of those days and stays` : `Finalized payrolls ${fin.join(', ')} already cover some of those days and stay`} as finalized.` : ''}`, fin.length ? 'warn' : undefined);
     }});
 }
 function empView(id) {
@@ -2162,7 +2199,7 @@ function empView(id) {
   modal({title: e.name, wide: true,
     body: `<dl class="kv"><dt>Role</dt><dd>${esc(e.role || '')}</dd><dt>Started</dt><dd>${esc(prettyDate(e.start_date))}</dd><dt>Leave ${yr}</dt><dd>${fq(leaveUsed(id, yr))} paid days used of ${fq(e.leave_credits)}</dd>
       <dt>Last 30 days</dt><dd>${fq(s30.days)} days worked, ${s30.late} late, ${s30.absent} absent, ${fq(s30.hours)} hrs, ${fq(s30.ot)} OT hrs</dd>${e.notes ? `<dt>Notes</dt><dd>${esc(e.notes)}</dd>` : ''}</dl>
-    <h3>Pay terms, every version</h3>${T([{h: 'Version', main: 1, f: v => `<b>v${v.no}</b>${v.no === payVersions(id).length ? ' ' + chip('Current', 'ok') : ''}`}, {h: 'Effective', f: v => esc(prettyDate(v.effective_date))}, {h: 'Daily rate', r: 1, f: v => peso(v.daily)}, {h: 'Regular hrs', r: 1, f: v => fq(v.reg)}, {h: 'Unpaid break', r: 1, f: v => fq(v.brk) + ' hr'},
+    <h3>Pay terms, every version</h3>${T([{h: 'Version', main: 1, f: v => `<b>v${v.no}</b>${v.id === (termsNow(id) || {}).id ? ' ' + chip('Current', 'ok') : v.effective_date > today() ? ' ' + chip('Scheduled', 'info') : ''}`}, {h: 'Effective', f: v => esc(prettyDate(v.effective_date))}, {h: 'Daily rate', r: 1, f: v => peso(v.daily)}, {h: 'Regular hrs', r: 1, f: v => fq(v.reg)}, {h: 'Unpaid break', r: 1, f: v => fq(v.brk) + ' hr'},
       {h: 'OT bonus/hr', r: 1, f: v => peso(v.ot)}, {h: 'UT penalty/hr', r: 1, f: v => peso(v.ut)}, {h: 'Reason', f: v => `<span class="small">${esc(v.note || '')}${v.legacy ? ' <span class="muted">(from the old shop settings)</span>' : ''}</span>`}], payVersions(id).slice().reverse())}
     <h3>Recent payslips</h3>${T([{h: 'Period', main: 1, f: p => `${esc(shortDate(p.period_start))} to ${esc(prettyDate(p.period_end))}`}, {h: 'Status', f: p => runChip(p.status)}, {h: 'Net pay', r: 1, f: p => peso(p.net)}], pays, {row: p => `class="click" data-act="payslip" data-id="${p.id}"`, empty: '<p class="muted small" style="margin:0">None yet.</p>'})}
     <div class="g2"><div><h3>Leaves</h3>${lv.length ? `<ul class="list">${lv.map(l => `<li><span>${esc(l.type)}: ${esc(shortDate(l.start_date))}${l.end_date !== l.start_date ? ' to ' + esc(shortDate(l.end_date)) : ''}</span><span class="small">${fq(l.days)}d ${l.status === 'cancelled' ? chip('Cancelled') : l.paid ? chip('Paid', 'ok') : chip('Unpaid')}</span></li>`).join('')}</ul>` : '<p class="muted small">None.</p>'}</div>
@@ -2243,7 +2280,6 @@ function computePay(e, s, end, st, withAdj = true) {
   const lv = q(`SELECT * FROM leaves WHERE employee_id=? AND status='approved' AND start_date<=? AND end_date>=?`, [e.id, end, s]);
   const leaveDays = {};
   lv.forEach(l => { const span = daysBetween(l.start_date, l.end_date) + 1, w = l.days / span; for (const d of dateRange(l.start_date > s ? l.start_date : s, l.end_date < end ? l.end_date : end)) leaveDays[d] = {type: l.type, paid: !!l.paid, w, leave_id: l.id}; });
-  if (!att.length && !lv.length && !e.active) return {employee_id: e.id, name: e.name, gross: 0, adjustments: 0, net: 0, details: {model: 2, days: [], versions: []}};
   const used = {}, days = [];
   const T = {days_worked: 0, hours: 0, ot_hours: 0, ut_hours: 0, paid_leave_days: 0, unpaid_leave_days: 0, absences: 0, base: 0, ot_pay: 0, ut_deduction: 0, leave_pay: 0};
   for (const d of dateRange(s, end)) {
@@ -2252,9 +2288,9 @@ function computePay(e, s, end, st, withAdj = true) {
       span: 0, worked: 0, ot: 0, ut: 0, base: 0, ot_pay: 0, ut_ded: 0, leave_pay: 0, pay: 0, note: ''};
     if (a && unit > 0) {
       used[t.id] = t; T.days_worked += unit;
-      const x = dayDiff(t, a.time_in, a.time_out);
+      const x = dayDiff(t, a.time_in, a.time_out, dayBreak(a, t));
       if (x) {
-        Object.assign(row, {span: x.span, worked: x.worked, ot: x.ot, ut: x.ut});
+        Object.assign(row, {span: x.span, brk: x.brk, brk_default: t.brk, worked: x.worked, ot: x.ot, ut: x.ut});
         row.base = t.daily; row.ot_pay = round(x.ot * t.ot, 2); row.ut_ded = round(Math.min(x.ut * t.ut, t.daily + row.ot_pay), 2);
         if (a.status === 'half') row.note = 'Undertime from clock times';
       } else {
@@ -2281,7 +2317,7 @@ function computePay(e, s, end, st, withAdj = true) {
   const adjTotal = round(adj.reduce((t, a) => t + a.amount, 0));
   return {employee_id: e.id, name: e.name, role: e.role, gross, adjustments: adjTotal, net: round(gross + adjTotal),
     details: {model: 2, pay_type: 'daily', ...T, absence_deduction: 0, versions, rates_used: versions.map(v => ({effective_date: v.effective_date, pay_type: 'daily', rate: v.daily})), adjustments: adj, lines, days,
-      formula: 'Day pay = daily rate − undertime hrs × undertime rate + overtime hrs × overtime rate; hours worked = time out − time in − unpaid break'}};
+      formula: 'Day pay = daily rate − undertime hrs × undertime rate + overtime hrs × overtime rate; hours worked = time out − time in − unpaid break for the day'}};
 }
 function payrollView() {
   if (!val('SELECT COUNT(*) FROM employees')) return noStaff();
@@ -2292,7 +2328,7 @@ function payrollView() {
   ${T([
     {h: 'Run', main: 1, f: r => `<b>#${r.id}</b> ${esc(shortDate(r.period_start))} to ${esc(prettyDate(r.period_end))}`},
     {h: 'Staff', r: 1, k: 'n'}, {h: 'Total net pay', r: 1, f: r => peso(r.total)}, {h: 'Status', f: r => runChip(r.status)}, {h: 'Created', f: r => `<span class="small">${esc(prettyTs(r.created_at))}</span>`}
-  ], runs, {row: r => `class="click" data-act="openRun" data-id="${r.id}"`, empty: empty('No payroll runs yet', 'Pick a period and the app calculates each person’s pay from attendance, leaves, adjustments and their rate on each day.', `<button class="btn primary" data-act="newRun">New payroll run</button>`)})}`;
+  ], runs, {row: r => `class="click" data-act="openRun" data-id="${r.id}"`, empty: empty('No payroll runs yet', 'Pick a period and the app calculates each person’s pay from attendance, leaves, adjustments and the pay terms in effect each day.', `<button class="btn primary" data-act="newRun">New payroll run</button>`)})}`;
 }
 const PAYSLIP_COLS = [['run_id', 'Run'], ['period_start', 'From'], ['period_end', 'To'], ['status', 'Run status'], ['name', 'Employee'], ['rates', 'Pay versions used'], ['days_worked', 'Days worked'], ['hours', 'Hours worked'], ['ot_hours', 'OT hours'], ['ut_hours', 'Undertime hours'], ['paid_leave_days', 'Paid leave days'], ['absences', 'Absent days'], ['base', 'Base'], ['ot_pay', 'OT pay'], ['ut_deduction', 'Undertime deduction'], ['leave_pay', 'Leave pay'], ['absence_deduction', 'Absence deduction'], ['gross', 'Gross'], ['adjustment_items', 'Adjustment items'], ['adjustments', 'Adjustments'], ['net', 'Net pay']];
 function payslipRow(l) {
@@ -2333,8 +2369,11 @@ function runView(id) {
   if (!r) { S.runId = null; return VIEWS.staff(); }
   const lines = q('SELECT * FROM payroll_lines WHERE run_id=? ORDER BY name COLLATE NOCASE', [id]).map(l => ({...l, d: J(l.details) || {}}));
   regCsv('run', `payroll-run-${id}`, () => lines.map(l => payslipRow({...l, period_start: r.period_start, period_end: r.period_end, status: r.status})), PAYSLIP_COLS);
+  regCsv('runDays', `payroll-run-${id}-day-by-day`, () => lines.flatMap(l => (l.d.days || []).map(x => ({name: l.name, ...x, status: ATT[x.status] || x.status, ver: 'v' + x.ver}))),
+    [['name', 'Employee'], ['date', 'Date'], ['status', 'Status'], ['time_in', 'Clock in'], ['time_out', 'Clock out'], ['span', 'Clocked hrs'], ['brk', 'Break hrs'], ['worked', 'Worked hrs'], ['reg', 'Required hrs'], ['ot', 'Overtime hrs'], ['ut', 'Undertime hrs'],
+     ['daily', 'Daily rate'], ['ot_rate', 'Overtime rate per hr'], ['ut_rate', 'Undertime rate per hr'], ['base', 'Base'], ['ot_pay', 'Overtime pay'], ['ut_ded', 'Undertime deduction'], ['leave_pay', 'Leave pay'], ['pay', 'Day pay'], ['ver', 'Pay terms version'], ['note', 'Note']]);
   const acts = (r.status === 'draft' ? `<button class="btn" data-act="recalcRun" data-id="${id}">Recalculate</button><button class="btn ghost" data-act="deleteRun" data-id="${id}">Delete draft</button><button class="btn primary" data-act="finalizeRun" data-id="${id}">Finalize</button>`
-    : r.status === 'finalized' ? `<button class="btn" data-act="printRun" data-id="${id}">${ic('print')}Print payslips</button><button class="btn ghost" data-act="voidRun" data-id="${id}">Void run</button>` : '') + csvBtn('run');
+    : r.status === 'finalized' ? `<button class="btn" data-act="printRun" data-id="${id}">${ic('print')}Print payslips</button><button class="btn ghost" data-act="voidRun" data-id="${id}">Void run</button>` : '') + csvBtn('run') + (lines.some(l => l.d.model === 2) ? csvBtn('runDays', 'Export day by day') : '');
   const sum = k => lines.reduce((s, l) => s + (l.d[k] || 0), 0);
   return `<div style="margin-bottom:10px"><button class="btn sm ghost" data-act="closeRun">${ic('left')}All payroll runs</button></div>` +
     head(`Payroll run #${id}`, `${esc(prettyDate(r.period_start))} to ${esc(prettyDate(r.period_end))} &nbsp;${runChip(r.status)}${r.finalized_at ? ` <span class="small">finalized ${esc(prettyTs(r.finalized_at))}</span>` : ''}${r.void_reason ? ` <span class="small">${esc(r.void_reason)}</span>` : ''}`, acts) +
@@ -2436,15 +2475,22 @@ function payslipHtml2(l, r, d) {
   ${(d.adjustments || []).map(a => `<tr><td>${esc(a.kind)}${a.note ? ` <span class="muted small">${esc(a.note)}</span>` : ''} <span class="muted small">${esc(prettyDate(a.date))}</span></td><td class="r">${signedPeso(a.amount)}</td></tr>`).join('')}
   <tr><td style="font-size:17px"><b>Net pay</b></td><td class="r" style="font-size:17px"><b>${peso(l.net)}</b></td></tr></tbody></table></div>
   ${(d.lines || []).length ? `<div class="note small" style="margin-top:12px">${d.lines.map(esc).join('<br>')}</div>` : ''}
-  <h4 style="margin:16px 0 4px">Day by day</h4><p class="small muted" style="margin:0 0 8px">Hours worked = time out − time in − unpaid break. Day pay = daily rate − undertime hrs × undertime rate + overtime hrs × overtime rate.${multi ? ' The version column shows which pay terms each day used.' : ''}</p>
-  <div class="tablewrap daytable"><table class="small"><thead><tr><th>Date</th><th>Status</th><th>In to out</th><th class="r">Worked</th><th class="r">Overtime</th><th class="r">Undertime</th><th class="r">Base</th><th class="r">Day pay</th><th>Terms</th></tr></thead><tbody>
-  ${(d.days || []).map(x => { const work = x.base || x.ot || x.ut, z = !x.pay && !work, sub = t => `<div class="muted" style="font-size:11.5px">${t}</div>`; return `<tr class="${z ? 'muted' : ''}${multi && x.ver !== (d.days[0] || {}).ver && (d.days.find(y => y.ver === x.ver) === x) ? ' vchange' : ''}"><td>${esc(parseD(x.date).toLocaleDateString('en-PH', {weekday: 'short', month: 'short', day: 'numeric'}))}</td><td>${esc(ATT[x.status] || (x.status === 'leave' ? 'Leave' : ''))}${x.note && x.note !== ATT[x.status] && !(work && !x.note.startsWith('Undertime from') && !x.note.startsWith('Without')) ? sub(esc(x.note)) : ''}</td>
-    <td>${x.time_in ? esc(fmtTime(x.time_in)) : ''}${x.time_out ? '–' + esc(fmtTime(x.time_out)) : ''}</td>
-    <td class="r">${x.worked ? fq(x.worked) + sub(`${fq(x.span)} − ${fq(x.brk)} break, ${fq(x.reg)} regular`) : ''}</td>
-    <td class="r">${x.ot ? `<span class="plus">${fq(x.ot)} hr</span>` + sub(`+${peso(x.ot_pay)}`) : ''}</td><td class="r">${x.ut ? `<span class="minus">${fq(x.ut)} hr</span>` + sub(`−${peso(x.ut_ded)}`) : ''}</td>
-    <td class="r">${x.base ? peso(x.base) : x.leave_pay ? peso(x.leave_pay) + sub('paid leave') : ''}</td>
-    <td class="r"><b>${x.pay ? peso(x.pay) : ''}</b></td><td>${work || x.leave_pay ? vcell(x.ver) : ''}</td></tr>`; }).join('')}
-  </tbody><tfoot><tr><td colspan="3"><b>Total</b></td><td class="r">${fq(d.hours)}</td><td class="r">${fq(d.ot_hours)} hr<div class="muted" style="font-size:11.5px">+${peso(d.ot_pay)}</div></td><td class="r">${fq(d.ut_hours)} hr<div class="muted" style="font-size:11.5px">−${peso(d.ut_deduction)}</div></td><td class="r">${peso(d.base + d.leave_pay)}${d.leave_pay ? `<div class="muted" style="font-size:11.5px">incl. ${peso(d.leave_pay)} leave</div>` : ''}</td><td class="r"><b>${peso(l.gross)}</b></td><td></td></tr></tfoot></table></div>
+  <h4 style="margin:16px 0 4px">Day by day</h4><p class="small muted" style="margin:0 0 8px">Worked hrs = clock out − clock in − break hrs. Overtime or undertime = worked hrs compared with the required hrs. Day pay = daily rate + overtime hrs × overtime rate − undertime hrs × undertime rate.${multi ? ' The pay terms column shows which version each day used.' : ''}</p>
+  <div class="daytable"><table><thead><tr><th>Date</th><th>Status</th><th>Clock in</th><th>Clock out</th><th class="r">Clocked hrs</th><th class="r">Break hrs</th><th class="r">Worked hrs</th><th class="r">Required hrs</th><th class="r">Overtime hrs</th><th class="r">Undertime hrs</th><th class="r">Daily rate</th><th class="r">Overtime pay</th><th class="r">Undertime deduction</th><th class="r">Leave pay</th><th class="r">Day pay</th><th>Pay terms</th></tr></thead><tbody>
+  ${(d.days || []).map(x => { const work = x.base || x.ot || x.ut, z = !x.pay && !work, nt = t => `<div class="muted dnote">${t}</div>`, cell = (lbl, v, cls = 'r') => `<td class="${cls}" data-label="${lbl}">${v}</td>`, n = v => `<span class="n">${v}</span>`;
+    return `<tr class="${z ? 'muted' : ''}${multi && x.ver !== (d.days[0] || {}).ver && (d.days.find(y => y.ver === x.ver) === x) ? ' vchange' : ''}"><td class="dday" data-label="Date">${esc(parseD(x.date).toLocaleDateString('en-PH', {weekday: 'short', month: 'short', day: 'numeric'}))}</td>
+    ${cell('Status', `${esc(ATT[x.status] || (x.status === 'leave' ? 'Leave' : 'Not marked'))}${x.note && x.note !== ATT[x.status] && x.note !== 'Not marked' ? nt(esc(x.note)) : ''}`, '')}
+    ${cell('Clock in', x.time_in ? n(esc(fmtTime(x.time_in))) : '', '')}${cell('Clock out', x.time_out ? n(esc(fmtTime(x.time_out))) : '', '')}
+    ${cell('Clocked hrs', x.span ? fq(x.span) : '')}${cell('Break hrs', x.span ? fq(x.brk) + (x.brk_default != null && x.brk !== x.brk_default ? nt(`default ${fq(x.brk_default)}`) : '') : '')}
+    ${cell('Worked hrs', x.span ? fq(x.worked) : '')}${cell('Required hrs', work ? fq(x.reg) : '')}
+    ${cell('Overtime hrs', x.span ? `<span class="${x.ot ? 'plus' : ''}">${fq(x.ot)}</span>` : '')}${cell('Undertime hrs', x.span ? `<span class="${x.ut ? 'minus' : ''}">${fq(x.ut)}</span>` : '')}
+    ${cell('Daily rate', x.base ? n(peso(x.base)) + (x.base !== x.daily ? nt(`of ${n(peso(x.daily))}`) : '') : '')}
+    ${cell('Overtime pay', x.ot_pay ? `${n('+' + peso(x.ot_pay))}${nt(`${fq(x.ot)} × ${n(peso(x.ot_rate))}`)}` : x.span ? n(peso(0)) : '')}
+    ${cell('Undertime deduction', x.ut_ded ? `${n('−' + peso(x.ut_ded))}${nt(`${fq(x.ut)} × ${n(peso(x.ut_rate))}`)}` : x.span ? n(peso(0)) : '')}
+    ${cell('Leave pay', x.leave_pay ? n(peso(x.leave_pay)) : '')}
+    ${cell('Day pay', work || x.leave_pay ? `<b class="n">${peso(x.pay)}</b>` : n(peso(0)))}
+    ${cell('Pay terms', work || x.leave_pay ? vcell(x.ver) : '', '')}</tr>`; }).join('')}
+  </tbody><tfoot><tr><td colspan="4"><b>Total</b></td><td class="r" data-label="Clocked hrs">${fq(round((d.days || []).reduce((t, x) => t + (x.span || 0), 0), 2))}</td><td class="r" data-label="Break hrs">${fq(round((d.days || []).reduce((t, x) => t + (x.span ? x.brk : 0), 0), 2))}</td><td class="r" data-label="Worked hrs">${fq(d.hours)}</td><td></td><td class="r" data-label="Overtime hrs">${fq(d.ot_hours)}</td><td class="r" data-label="Undertime hrs">${fq(d.ut_hours)}</td><td class="r" data-label="Base pay"><span class="n">${peso(d.base)}</span></td><td class="r" data-label="Overtime pay"><span class="n">+${peso(d.ot_pay)}</span></td><td class="r" data-label="Undertime deduction"><span class="n">−${peso(d.ut_deduction)}</span></td><td class="r" data-label="Leave pay"><span class="n">${peso(d.leave_pay)}</span></td><td class="r" data-label="Gross"><b class="n">${peso(l.gross)}</b></td><td></td></tr></tfoot></table></div>
   ${worked.length ? '' : '<p class="muted small">No paid days in this period.</p>'}</div>`;
 }
 function payslip(lineId) {
@@ -2552,17 +2598,18 @@ function insPayroll(r) {
   const lines = runs.length ? q(`SELECT * FROM payroll_lines WHERE run_id IN (${runs.map(x => x.id).join(',')})`).map(l => ({...l, d: J(l.details) || {}})) : [];
   const sum = (k, arr = lines) => arr.reduce((s, l) => s + (l.d[k] || 0), 0);
   const net = lines.reduce((s, l) => s + l.net, 0), sales = salesFor(r.f, r.e).s, est = laborEstimate(r.f, r.e);
-  const byEmp = {}; lines.forEach(l => { const o = byEmp[l.name] ||= {name: l.name, net: 0, gross: 0, ot: 0, adj: 0}; o.net += l.net; o.gross += l.gross; o.ot += l.d.ot_pay || 0; o.adj += l.adjustments; });
-  regCsv('payEmp', 'payroll-by-employee', () => Object.values(byEmp).map(x => ({...x, net: round(x.net), gross: round(x.gross), ot: round(x.ot), adj: round(x.adj)})), [['name', 'Employee'], ['gross', 'Gross'], ['ot', 'Overtime pay'], ['adj', 'Adjustments'], ['net', 'Net pay']]);
+  const byEmp = {}; lines.forEach(l => { const o = byEmp[l.name] ||= {name: l.name, net: 0, gross: 0, ot: 0, adj: 0}; o.net += l.net; o.gross += l.gross; o.ot += l.d.ot_pay || 0; o.ut = (o.ut || 0) + (l.d.ut_deduction || 0); o.adj += l.adjustments; });
+  regCsv('payEmp', 'payroll-by-employee', () => Object.values(byEmp).map(x => ({...x, net: round(x.net), gross: round(x.gross), ot: round(x.ot), ut: round(x.ut || 0), adj: round(x.adj)})), [['name', 'Employee'], ['gross', 'Gross'], ['ot', 'Overtime pay'], ['ut', 'Undertime deductions'], ['adj', 'Adjustments'], ['net', 'Net pay']]);
   regCsv('payRuns', 'payroll-runs-in-period', () => runs, [['id', 'Run'], ['period_start', 'From'], ['period_end', 'To'], ['total', 'Total net'], ['finalized_at', 'Finalized']]);
   return `<div class="tiles">
     <div class="tile hero"><div class="k">Net pay, finalized</div><div class="v">${peso(net)}</div><div class="d">${runs.length} run${runs.length === 1 ? '' : 's'} ending in this period</div></div>
     <div class="tile"><div class="k">Overtime pay</div><div class="v">${peso(sum('ot_pay'))}</div><div class="d">${fq(sum('ot_hours'))} hrs</div></div>
+    <div class="tile"><div class="k">Undertime deductions</div><div class="v">${sum('ut_deduction') ? '−' : ''}${peso(sum('ut_deduction'))}</div><div class="d">${fq(sum('ut_hours'))} hrs</div></div>
     <div class="tile"><div class="k">Adjustments</div><div class="v">${peso(lines.reduce((s, l) => s + l.adjustments, 0))}</div><div class="d">Bonuses minus deductions</div></div>
     <div class="tile"><div class="k">Labor estimate</div><div class="v">${peso(est)}</div><div class="d">From attendance, before adjustments</div></div>
     <div class="tile"><div class="k">Labor as % of sales</div><div class="v">${sales ? pct(est, sales) : '–'}</div><div class="d">Estimate ÷ ${peso(sales)} sales</div></div>
   </div><div class="stack">
-  ${runs.length ? `<div class="grid c2e">${cardT('Net pay by person', hBars(Object.values(byEmp).sort((a, b) => b.net - a.net).map(x => ({x: x.name, v: x.net, tip: `${x.name}: ${peso(x.net)} net, ${peso(x.ot)} overtime`}))), 'payEmp')}
+  ${runs.length ? `<div class="grid c2e">${cardT('Net pay by person', hBars(Object.values(byEmp).sort((a, b) => b.net - a.net).map(x => ({x: x.name, v: x.net, tip: `${x.name}: ${peso(x.net)} net, ${peso(x.ot)} overtime, −${peso(x.ut || 0)} undertime`}))), 'payEmp')}
   ${cardT('Where the money went', hBars([{x: 'Base pay', v: sum('base')}, {x: 'Overtime', v: sum('ot_pay')}, {x: 'Paid leave', v: sum('leave_pay')}, {x: 'Undertime deductions', v: sum('ut_deduction')}, {x: 'Absence deductions', v: sum('absence_deduction')}].filter(x => x.v)))}</div>
   ${cardT('Finalized runs', T([{h: 'Run', main: 1, f: x => `<b>#${x.id}</b> ${esc(shortDate(x.period_start))} to ${esc(prettyDate(x.period_end))}`}, {h: 'Total net', r: 1, f: x => peso(x.total)}, {h: 'Finalized', f: x => `<span class="small">${esc(prettyTs(x.finalized_at))}</span>`}], runs, {row: x => `class="click" data-act="openRunFrom" data-id="${x.id}"`}), 'payRuns')}`
   : empty('No finalized payroll in this period', 'Runs are counted by their end date. Widen the period, or finalize a payroll run in Staff &amp; payroll.', `<button class="btn" data-act="goPayroll">Open payroll</button>`)}
@@ -3135,7 +3182,7 @@ function genSample() {
         const tout = status === 'absent' ? '' : status === 'late' ? sIn + 540 : tin + dur - early;   // late arrivals still leave at shift end: undertime
         const hm = m => `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`;
         const brk = status === 'absent' ? 0 : 1, hrs = status === 'absent' ? 0 : round(Math.max(0, (tout - tin) / 60 - brk), 2);
-        att.push({employee_id: e.id, date: d, status, time_in: tin === '' ? '' : hm(tin), time_out: isToday ? '' : tout === '' ? '' : hm(tout), break_hours: isToday ? 0 : brk, hours: isToday ? 0 : hrs, ot_hours: isToday ? 0 : Math.max(0, round(hrs - 8, 2)), note: status === 'absent' ? 'Sick, texted in' : '', updated_at: d + ' 21:00:00'});
+        att.push({employee_id: e.id, date: d, status, time_in: tin === '' ? '' : hm(tin), time_out: isToday ? '' : tout === '' ? '' : hm(tout), break_hours: brk, hours: isToday ? 0 : hrs, ot_hours: isToday ? 0 : Math.max(0, round(hrs - 8, 2)), note: status === 'absent' ? 'Sick, texted in' : '', updated_at: d + ' 21:00:00'});
         void ix;
       });
     }
@@ -3305,7 +3352,7 @@ function workbookData() {
     ['Stock ledger', lbl(q('SELECT m.*, i.name, i.unit, SUM(m.qty) OVER (PARTITION BY m.ingredient_id ORDER BY m.ts, m.id) bal FROM stock_moves m LEFT JOIN ingredients i ON i.id=m.ingredient_id ORDER BY m.ts, m.id'), [['ts', 'Time'], ['name', 'Ingredient'], ['unit', 'Unit'], ['type', 'Type', v => MOVE[v] || v], ['qty', 'Change'], ['bal', 'Balance after'], ['unit_cost', 'Unit cost'], ['ref_id', 'Order', (v, r) => r.ref_type === 'order' ? v : ''], ['note', 'Note']])],
     ['Recipes', lbl(products(true), [['name', 'Item'], ['category', 'Category'], ['price', 'Price'], ['version', 'Version'], ['lines', 'Ingredients per serving', v => v.map(l => `${l.qty} ${l.unit} ${l.name}`).join('; ')], ['active', 'On menu', v => v ? 'Yes' : 'No']])],
     ['Recipe versions', lbl(q('SELECT v.*, p.name FROM recipe_versions v JOIN products p ON p.id=v.product_id ORDER BY p.name, v.version'), [['name', 'Item'], ['version', 'Version'], ['price', 'Price'], ['lines', 'Ingredients', v => (J(v) || []).map(l => `${l.qty} ${l.unit} ${l.name}`).join('; ')], ['note', 'What changed'], ['created_at', 'Saved']])],
-    ['Employees', lbl(employees(true), [['name', 'Name'], ['role', 'Role'], ['start_date', 'Start date'], ['id', 'Daily rate', id => (payVersions(id).slice(-1)[0] || {}).daily ?? ''], ['id', 'Regular hours', id => (payVersions(id).slice(-1)[0] || {}).reg ?? ''], ['leave_credits', 'Leave days per year'], ['active', 'Active', v => v ? 'Yes' : 'No'], ['notes', 'Notes']])],
+    ['Employees', lbl(employees(true), [['name', 'Name'], ['role', 'Role'], ['start_date', 'Start date'], ['id', 'Daily rate', id => (termsNow(id) || {}).daily ?? ''], ['id', 'Regular hours', id => (termsNow(id) || {}).reg ?? ''], ['leave_credits', 'Leave days per year'], ['active', 'Active', v => v ? 'Yes' : 'No'], ['notes', 'Notes']])],
     ['Pay terms', lbl(employees(true).flatMap(e => payVersions(e.id).map(v => ({...v, name: e.name}))), [['name', 'Employee'], ['no', 'Version'], ['effective_date', 'Effective'], ['daily', 'Daily rate'], ['reg', 'Regular hours'], ['brk', 'Unpaid break hours'], ['ot', 'OT bonus per hour'], ['ut', 'UT penalty per hour'], ['note', 'Reason']])],
     ['Attendance', lbl(q('SELECT a.*, e.name FROM attendance a JOIN employees e ON e.id=a.employee_id ORDER BY a.date, e.name'), [['date', 'Date'], ['name', 'Employee'], ['status', 'Status', v => ATT[v] || v], ['time_in', 'Time in'], ['time_out', 'Time out'], ['break_hours', 'Break (hrs)'], ['hours', 'Hours worked'], ['ot_hours', 'OT hours'], ['note', 'Note']])],
     ['Leaves', lbl(q('SELECT l.*, e.name FROM leaves l JOIN employees e ON e.id=l.employee_id ORDER BY l.start_date'), [['name', 'Employee'], ['type', 'Type'], ['start_date', 'From'], ['end_date', 'To'], ['days', 'Days'], ['paid', 'Paid', v => v ? 'Yes' : 'No'], ['status', 'Status'], ['note', 'Note']])],
@@ -3344,7 +3391,7 @@ function eraseAll() {
       <div><b>1. Save a copy first</b><p class="hint" style="margin:4px 0 8px">Keep at least one of these somewhere safe.</p>
       <div class="actions"><button type="button" class="btn" data-act="exportDb">${ic('dl')}Export .db backup</button><button type="button" class="btn" data-act="exportXlsx">${ic('dl')}Export to Excel</button></div></div>
       <div class="stack" style="gap:10px"><b>2. Choose what to reset</b>
-      <label class="chk"><input type="checkbox" name="resetSettings"> Also reset settings (shop name, channels, payments, payroll rules)</label>
+      <label class="chk"><input type="checkbox" name="resetSettings"> Also reset shop settings (shop name, channels, payment methods)</label>
       <label class="chk"><input type="checkbox" name="backed" ${S.exported ? 'checked' : ''}> I’ve saved a backup, or I don’t need one</label></div>
       <label class="f">3. Type ERASE to confirm<input name="confirm" autocomplete="off" spellcheck="false"></label>`,
     onSubmit: d => {
@@ -4041,7 +4088,7 @@ function fillAttendance() {
   modal({title: 'Fill attendance for several days', submit: 'Fill attendance', wide: true,
     body: `<div class="g2"><label class="f">From<input type="date" name="from" value="${mon}" required></label><label class="f">To<input type="date" name="to" value="${t}" required></label></div>
       <div class="f">People<div class="chkgrid">${emps.map(e => `<label class="chk"><input type="checkbox" name="emp[]" value="${e.id}" checked> ${esc(e.name)}</label>`).join('')}</div></div>
-      <div class="g3"><label class="f">Status<select name="status">${opts(Object.entries(ATT), 'present')}</select></label>${cloudOn() && !can('attTimes') ? '' : '<label class="f">Time in <small>Optional</small><input type="time" name="tin"></label><label class="f">Time out <small>Optional</small><input type="time" name="tout"></label>'}</div>
+      <div class="g3"><label class="f">Status<select name="status">${opts(Object.entries(ATT), 'present')}</select></label>${cloudOn() && !can('attTimes') ? '' : '<label class="f">Time in <small>Optional</small><input type="time" name="tin"></label><label class="f">Time out <small>Optional</small><input type="time" name="tout"></label><label class="f">Break (hrs) <small>Blank: each person’s pay terms</small><input type="number" name="brk" min="0" max="12" step="0.25" inputmode="decimal"></label>'}</div>
       <div class="f">Skip<label class="chk"><input type="checkbox" name="skipDone" checked> Days already marked</label><label class="chk"><input type="checkbox" name="skipLeave" checked> Days someone is on leave</label><label class="chk"><input type="checkbox" name="skipSun"> Sundays</label></div>`,
     onSubmit: async d => {
       need(d.from && d.to && d.to >= d.from, 'The end date must be on or after the start date.');
@@ -4056,7 +4103,7 @@ function fillAttendance() {
       }
       need(todo.length, 'Nothing to fill: every chosen day is already marked or skipped.');
       if (!await ask({title: `Fill ${todo.length} attendance record${todo.length === 1 ? '' : 's'}?`, body: `${esc(ATT[d.status])}${d.tin ? `, ${esc(fmtTime(d.tin))}` : ''}${d.tout ? ` to ${esc(fmtTime(d.tout))}` : ''} for ${d.emp.length} ${d.emp.length === 1 ? 'person' : 'people'} from ${esc(prettyDate(d.from))} to ${esc(prettyDate(d.to))}.`, ok: 'Fill'})) return false;
-      todo.forEach(([id, day]) => attSave(id, day, {status: d.status, ...(d.tin ? {time_in: d.tin} : {}), ...(d.tout ? {time_out: d.tout} : {})}));
+      todo.forEach(([id, day]) => attSave(id, day, {status: d.status, ...(String(d.brk ?? '').trim() !== '' ? {break_hours: d.brk} : {}), ...(d.tin ? {time_in: d.tin} : {}), ...(d.tout ? {time_out: d.tout} : {})}));
       toast(`Filled ${todo.length} attendance record${todo.length === 1 ? '' : 's'}.`);
     }});
 }
@@ -4673,10 +4720,10 @@ const PERMS = {
   voidOrders: OM,           // void orders
   attAll: OM,               // everyone's attendance (staff: their own only)
   staffTabs: OM,            // employees, leaves, adjustments, payroll tabs
-  empEdit: O,               // add or edit employees and pay rates
+  empEdit: O,               // add or edit employees and their pay terms
   leaveEdit: OM,            // file and cancel leaves
   payEdit: O,               // payroll adjustments and payroll runs
-  shopSettings: O,          // shop and payroll settings
+  shopSettings: O,          // shop settings (pay terms are per employee)
   backup: O,                // every export: Excel, .db and CSV downloads; replacing the live data
   attTimes: O,              // type or change clock-in and clock-out times (others use Clock in / Clock out)
   recView: OM,              // Recipes page (staff never receive recipes)
@@ -5172,13 +5219,13 @@ function rolesGuide() {
       ['See ingredient costs, stock value, purchase list, stock ledger', Y(), Y(), N()]]],
     ['Attendance and staff', [
       ['Clock in and Clock out', Y('Anyone'), Y('Anyone, once in and once out a day each'), Y('Themselves, once in and once out a day')],
-      ['Type or change clock times, hours and overtime', Y('Recorded in History as an owner override'), N(), N()],
+      ['Type or change clock times and a day’s unpaid break (hours, overtime and undertime follow)', Y('Recorded in History as an owner override'), N(), N()],
       ['Status, break and notes on the daily sheet', Y('Everyone'), Y('Everyone'), Y('Their own')],
       ['See attendance', Y('Everyone'), Y('Everyone'), Y('Their own')],
       ['Fill several days, mark the rest present', Y(), Y('Without times'), N()],
       ['File and cancel leaves', Y(), Y(), N()],
-      ['See employees, pay rates and payroll runs', Y(), Y('View only'), N()],
-      ['Add or edit employees and pay rates', Y(), N(), N()],
+      ['See employees, pay terms and payroll runs', Y(), Y('View only'), N()],
+      ['Add or edit employees and their pay terms', Y(), N(), N()],
       ['Payroll adjustments and payroll runs', Y(), N(), N()]]],
     ['Money and reports', [
       ['Overview', Y('Everything'), Y('Everything'), Y('Sales, orders, best sellers, running low, own attendance. No margins, labor or alerts.')],
@@ -5355,10 +5402,10 @@ function clearLive() {
   if (S.ds !== 'live') { toast('Switch to the live shop first.', 'warn'); return; }
   const c = t => val(`SELECT COUNT(*) FROM ${t}`);
   modal({title: 'Clear all live data?', submit: 'Clear all live data', danger: true,
-    body: `<p style="margin:0">Everything in the <b>live shop</b> is deleted for everyone, right away: ${c('orders').toLocaleString('en-PH')} orders, ${c('products')} recipes, ${c('ingredients')} ingredients and their stock, ${c('employees')} employees with their attendance and payroll, ${c('expenses').toLocaleString('en-PH')} cashflow entries, and History.</p>
+    body: `<p style="margin:0">Everything in the <b>live shop</b> is deleted for everyone, right away: ${c('orders').toLocaleString('en-PH')} orders, ${c('products')} recipes, ${c('ingredients')} ingredients and their stock, ${c('employees')} employees with their pay terms, attendance and payroll, ${c('expenses').toLocaleString('en-PH')} cashflow entries, and History.</p>
       <p class="hint" style="margin:0">Logins and roles stay, but links from logins to employee records are removed; set them again in Team after adding employees. The sample data isn’t touched.</p>
       <label class="chk"><input type="checkbox" name="save" checked> Download a backup of the live data first</label>
-      <label class="chk"><input type="checkbox" name="keep" checked> Keep shop and payroll settings (shop name, channels, payment methods, hours)</label>
+      <label class="chk"><input type="checkbox" name="keep" checked> Keep shop settings (shop name, channels, payment methods)</label>
       <label class="f">Type “clear” to confirm<input name="confirm" autocomplete="off" spellcheck="false"></label>`,
     onSubmit: d => {
       need((d.confirm || '').trim().toLowerCase() === 'clear', 'Type “clear” to confirm.');
@@ -5376,7 +5423,7 @@ async function doClearLive(save, keep) {
   S.pool = {}; await refillIds(Object.keys(ID_BLOCK).concat(CLOUD_TABLES.filter(t => !(t in ID_BLOCK) && t !== 'meta')));
   try { await cloudSync({full: true}); } catch {}
   if (ok) {
-    try { tx(() => { if (S.appId) setMeta('app_id', S.appId); if (keep && settingsJson) setMeta('settings', settingsJson); audit('File', 'Cleared live data', null, `Cleared all live data${keep ? ', kept shop and payroll settings' : ''}`); }); } catch (e) { console.warn(e); }
+    try { tx(() => { if (S.appId) setMeta('app_id', S.appId); if (keep && settingsJson) setMeta('settings', settingsJson); audit('File', 'Cleared live data', null, `Cleared all live data${keep ? ', kept shop settings' : ''}`); }); } catch (e) { console.warn(e); }
     S.user.employee_id = null; S.team = null;
   }
   bx.done(); S.cart = []; S.runId = null; S.ver++; render();
