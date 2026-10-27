@@ -849,6 +849,7 @@ table.heat tr.on td:first-child b{text-decoration:underline;text-underline-offse
 }
 @page wide{size:A4 landscape;margin:10mm}
 @media print{html:has(#printArea .payslip),body:has(#printArea .payslip),#printArea:has(.payslip){page:wide}#printArea .daytable table{font-size:9.5px}#printArea .daytable th{font-size:9px}#printArea .daytable tr{break-inside:avoid}#printArea .daytable tfoot{display:table-row-group}}
+input.bad,select.bad{border-color:var(--bad)!important;box-shadow:0 0 0 3px var(--bad-bg)}
 .att .dirty{border-color:var(--c2);background:color-mix(in srgb,var(--c2) 14%,var(--field))}
 .unsaved{color:var(--warn);font-weight:600}
 .note.attdraft{display:flex;align-items:center;justify-content:space-between;gap:10px 16px;flex-wrap:wrap;margin-bottom:12px}
@@ -919,6 +920,40 @@ const daysInMonth = s => { const d = parseD(s); return new Date(d.getFullYear(),
 function* dateRange(s, e) { for (let d = s; d <= e; d = addDays(d, 1)) yield d; }
 const round = (n, p = 2) => { const f = 10 ** p; return Math.round((+n || 0) * f) / f; };
 const num = v => { const n = parseFloat(String(v ?? '').replace(/[,₱\s]/g, '')); return isFinite(n) ? n : 0; };
+// strict: a whole number or decimal (commas as thousands, a ₱ sign and spaces allowed); anything else is NaN
+const numStrict = v => { const t = String(v ?? '').replace(/[₱\s]/g, ''); return /^[-+]?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?$|^[-+]?\.\d+$/.test(t) ? parseFloat(t.replace(/,/g, '')) : NaN; };
+function fieldLabel(el) {
+  if (el.getAttribute('aria-label')) return el.getAttribute('aria-label');
+  const lb = el.closest('label'); if (lb) { const t = [...lb.childNodes].filter(n => n.nodeType === 3 || n.tagName === 'SPAN').map(n => n.textContent).join(' ').trim(); if (t) return t; }
+  const row = el.closest('tr'); if (row) { const th = row.querySelector('td b, td'); if (th) return th.textContent.trim(); }
+  return 'This field';
+}
+// returns an error message for the first bad number field in a form, and marks it
+function checkNumbers(f) {
+  for (const el of f.querySelectorAll('input[inputmode=decimal], input[inputmode=numeric], input[type=number]')) {
+    if (el.disabled || el.closest('[hidden]') || el.name === 'code') continue;
+    el.classList.remove('bad'); const v = el.value.trim(); if (!v) continue;
+    const n = numStrict(v), lbl = fieldLabel(el).replace(/\s+/g, ' ');
+    let msg = '';
+    if (!isFinite(n)) msg = `${lbl}: “${v}” isn’t a number.`;
+    else if (el.min !== '' && n < +el.min) msg = +el.min === 0 ? `${lbl} can’t be negative.` : `${lbl} must be at least ${el.min}.`;
+    else if (el.max !== '' && n > +el.max) msg = `${lbl} can’t be more than ${el.max}.`;
+    else if (el.dataset.int && n !== Math.round(n)) msg = `${lbl} must be a whole number.`;
+    if (msg) { el.classList.add('bad'); return {msg, el}; }
+  }
+  for (const el of f.querySelectorAll('input[type=date], input[type=datetime-local]')) {
+    if (el.disabled || el.closest('[hidden]')) continue;
+    el.classList.remove('bad'); const v = el.value; if (!v) continue;
+    const dv = v.slice(0, 10), lbl = fieldLabel(el).replace(/\s+/g, ' '), mn = (el.min || '').slice(0, 10), mx = (el.max || '').slice(0, 10);
+    let msg = '';
+    if (dv < '2000-01-01') msg = `${lbl}: ${prettyDate(dv)} looks wrong. Check the year.`;
+    else if (dv > addDays(today(), 731)) msg = `${lbl}: ${prettyDate(dv)} is more than 2 years ahead. Check the year.`;
+    else if (mx && dv > mx) msg = mx === today() ? `${lbl} can’t be in the future.` : `${lbl} can’t be after ${prettyDate(mx)}.`;
+    else if (mn && dv < mn) msg = `${lbl} can’t be before ${prettyDate(mn)}.`;
+    if (msg) { el.classList.add('bad'); return {msg, el}; }
+  }
+  return null;
+}
 const fq = n => round(n, 3).toLocaleString('en-PH', {maximumFractionDigits: 3});
 const peso = n => (n < 0 ? '−' : '') + '₱' + Math.abs(round(n)).toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const pesoK = n => { const a = Math.abs(n); return '₱' + (a >= 1e6 ? (n/1e6).toFixed(1).replace(/\.0$/, '') + 'M' : a >= 1e4 ? (n/1e3).toFixed(1).replace(/\.0$/, '') + 'K' : Math.round(n).toLocaleString('en-PH')); };
@@ -998,10 +1033,16 @@ function update(t, id, o) { const k = Object.keys(o); run(`UPDATE ${t} SET ${k.m
 function tx(fn) {
   const cl = cloudOn() && S.user && S.capture;
   if (cl && (!navigator.onLine || S.serverOk === false)) throw new Error('No connection to Supabase, so this can’t be saved right now. Check the internet and try again.');
+  if (S.txDepth) return fn();   // already inside a transaction
   const mark = S.pend ? S.pend.length : 0; S.inTx = true;
   run('BEGIN');
-  try { const r = fn(); run('COMMIT'); S.inTx = false; markDirty(); if (cl) flushOps(); return r; }
-  catch (e) { S.inTx = false; try { run('ROLLBACK'); } catch {} if (S.pend) S.pend.length = mark; throw e; }
+  const outer = !S.txDepth; S.txDepth = (S.txDepth || 0) + 1; if (outer) S.idShort = null;
+  try {
+    const r = fn();
+    if (outer && S.idShort) throw idShortErr(S.idShort);   // counted every id it needs: undo, reserve them, run again
+    run('COMMIT'); S.inTx = false; S.txDepth--; markDirty(); if (cl) flushOps(); return r;
+  }
+  catch (e) { S.txDepth--; if (S.txDepth) throw e; S.inTx = false; S.idShort = null; try { run('ROLLBACK'); } catch {} if (S.pend) S.pend.length = mark; throw e; }
 }
 function audit(module, action, entityId, summary, before = null, after = null, details = null) {
   insert('audit', {ts: nowTs(), module, action, entity_id: entityId ?? null, summary, by_name: S.user ? S.user.name : null, by_email: S.user ? S.user.email : null, by_user: S.user ? S.user.user_id : null,
@@ -1285,7 +1326,10 @@ function T(cols, rows, o = {}) {
 function csvText(rows, cols) {
   const head = cols.map(c => Array.isArray(c) ? c[1] : c);
   const keys = cols.map(c => Array.isArray(c) ? c[0] : c);
-  return '﻿' + [head.join(','), ...rows.map(r => keys.map(k => { const v = r[k] == null ? '' : String(r[k]); return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }).join(','))].join('\r\n');
+  // text that starts with = + - @ (or a tab) would run as a formula in Excel or Sheets; a leading ' keeps it as text
+  const safe = v => typeof v === 'string' && /^[=+\-@\t\r]/.test(v) && !/^-?\d+(\.\d+)?$/.test(v) ? "'" + v : v;
+  const cell = x => { const v = x == null ? '' : String(safe(x)); return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
+  return '﻿' + [head.map(cell).join(','), ...rows.map(r => keys.map(k => cell(r[k])).join(','))].join('\r\n');
 }
 function saveCsv(name, rows, cols) {
   if (!rows.length) { toast('Nothing to export for these filters.', 'warn'); return; }
@@ -1382,8 +1426,10 @@ function modal({title, body, submit, onSubmit, wide, danger, footer, onOpen, clo
     e.preventDefault();
     if (!onSubmit) return d.close();
     const data = {}; for (const [k, v] of new FormData(f)) { if (k.endsWith('[]')) (data[k.slice(0, -2)] ||= []).push(v); else data[k] = v; }
+    const bad = checkNumbers(f);
+    if (bad) { const m = f.querySelector('.merr'); m.textContent = bad.msg; m.hidden = false; bad.el.focus(); bad.el.scrollIntoView({block: 'nearest'}); return; }
     const sb0 = f.querySelector('footer [type=submit]'); sb0 && sb0.classList.add('busy');
-    try { const r = await onSubmit(data, f); sb0 && sb0.classList.remove('busy'); if (r !== false) { d.close(); render(); } }
+    try { const r = await withIds(() => onSubmit(data, f)); sb0 && sb0.classList.remove('busy'); if (r !== false) { d.close(); render(); } }
     catch (err) { sb0 && sb0.classList.remove('busy'); const m = f.querySelector('.merr'); m.textContent = err.message; m.hidden = false; m.scrollIntoView({block: 'nearest'}); if (!(err instanceof Error) || err.stack && !/need/.test(err.stack.split('\n')[1] || '')) console.warn(err); }
   };
   if (!d.open) d.showModal();
@@ -1609,6 +1655,8 @@ async function checkout() {
   const when = F('pos.when');
   const ts = when ? when.replace('T', ' ') + ':00' : nowTs();
   if (ts.slice(0, 10) > today()) { toast('The order date can’t be in the future.', 'err'); return; }
+  if (ts.slice(0, 10) < '2000-01-01') { toast('The order date looks wrong. Check the year.', 'err'); return; }
+  { const dv = String(F('pos.disc') || '').trim(); if (dv && !(numStrict(dv) >= 0)) { toast(`The discount “${dv}” isn’t a valid amount.`, 'err'); return; } }
   const sub = items.reduce((s, i) => s + i.price * i.qty, 0), disc = Math.min(Math.max(0, num(F('pos.disc'))), sub);
   const needs = {};
   items.forEach(it => it.lines.forEach(l => {
@@ -1772,14 +1820,14 @@ function ingredientForm(i = {}) {
   return `<label class="f">Name<input name="name" required value="${esc(i.name || '')}" placeholder="e.g. Fresh milk"></label>
   <div class="g2"><label class="f">Unit <small>What stock and recipes are counted in</small><input name="unit" required list="units" value="${esc(i.unit || '')}" placeholder="ml, g, pcs"></label>
   <label class="f">Category <small>Optional, for grouping</small><input name="category" list="ingcats" value="${esc(i.category || '')}" placeholder="Dairy, Syrups, Packaging"></label></div>
-  <div class="g2"><label class="f">Reorder at <small>Warn when stock falls to this</small><input name="reorder_level" inputmode="decimal" value="${i.reorder_level ?? ''}"></label>
-  <label class="f">Cost per unit (₱) <small>Updated by each restock</small><input name="unit_cost" inputmode="decimal" value="${i.unit_cost ?? ''}"></label></div>
+  <div class="g2"><label class="f">Reorder at <small>Warn when stock falls to this</small><input name="reorder_level" inputmode="decimal" min="0" value="${i.reorder_level ?? ''}"></label>
+  <label class="f">Cost per unit (₱) <small>Updated by each restock</small><input name="unit_cost" inputmode="decimal" min="0" value="${i.unit_cost ?? ''}"></label></div>
   <datalist id="units">${['g', 'kg', 'ml', 'L', 'pcs', 'shots', 'packs'].map(u => `<option value="${u}">`).join('')}</datalist>
   <datalist id="ingcats">${[...new Set(ingredients(true).map(x => x.category).filter(Boolean))].map(c => `<option value="${esc(c)}">`).join('')}</datalist>`;
 }
 function addIngredient() {
   modal({title: 'Add ingredient', submit: 'Add ingredient',
-    body: ingredientForm() + `<label class="f">Opening stock <small>How much you have right now, in the unit above</small><input name="opening" inputmode="decimal" placeholder="0"></label>`,
+    body: ingredientForm() + `<label class="f">Opening stock <small>How much you have right now, in the unit above</small><input name="opening" inputmode="decimal" min="0" placeholder="0"></label>`,
     onSubmit: d => {
       need(d.name.trim(), 'Enter a name.'); need(d.unit.trim(), 'Enter a unit, like ml or g.');
       need(!one('SELECT id FROM ingredients WHERE name=? COLLATE NOCASE', [d.name.trim()]), 'An ingredient with that name already exists.');
@@ -1802,6 +1850,7 @@ function editIngredient(id) {
     footer: `<button type="button" class="btn left" data-act="ingVersions" data-id="${id}">Versions</button><button type="button" class="btn ghost" data-act="ledgerFor" data-id="${id}">Ledger</button>`,
     onSubmit: async d => {
       need(d.name.trim() && d.unit.trim(), 'Name and unit are required.');
+      need(!one('SELECT id FROM ingredients WHERE name=? COLLATE NOCASE AND id<>?', [d.name.trim(), id]), 'Another ingredient already has that name.');
       const after = {name: d.name.trim(), unit: d.unit.trim(), category: d.category.trim(), reorder_level: num(d.reorder_level), unit_cost: num(d.unit_cost), active: d.archived ? 0 : 1};
       const before = Object.fromEntries(Object.keys(after).map(k => [k, i[k] ?? '']));
       const changed = Object.keys(after).filter(k => String(after[k] ?? '') !== String(before[k] ?? ''));
@@ -1816,12 +1865,13 @@ function restock(id, qtyPrefill) {
   if (!ings.length) { toast('Add an ingredient first.', 'warn'); return; }
   modal({title: 'Restock', submit: 'Add to stock',
     body: `<label class="f">Ingredient<select name="ingredient_id" required>${opts(ings.map(i => [i.id, `${i.name} (${i.unit})`]), id)}</select></label>
-    <div class="g2"><label class="f">Quantity received<input name="qty" inputmode="decimal" required placeholder="0" value="${qtyPrefill ? esc(qtyPrefill) : ''}"></label>
-    <div class="f"><span>Cost</span><span class="seg"><label><input type="radio" name="costmode" value="total" checked>Total paid</label><label><input type="radio" name="costmode" value="unit">Per unit</label></span><input name="cost" inputmode="decimal" placeholder="₱ (optional)" aria-label="Cost"></div></div>
+    <div class="g2"><label class="f">Quantity received<input name="qty" inputmode="decimal" min="0" required placeholder="0" value="${qtyPrefill ? esc(qtyPrefill) : ''}"></label>
+    <div class="f"><span>Cost</span><span class="seg"><label><input type="radio" name="costmode" value="total" checked>Total paid</label><label><input type="radio" name="costmode" value="unit">Per unit</label></span><input name="cost" inputmode="decimal" min="0" placeholder="₱ (optional)" aria-label="Cost"></div></div>
     <div class="g2"><label class="f">Supplier<input name="supplier" placeholder="optional"></label><label class="f">Received on<input type="date" name="date" value="${today()}" max="${today()}"></label></div>
     <label class="f">Note<input name="note" placeholder="Receipt no., batch, anything to remember"></label>`,
     onSubmit: d => {
       const qty = num(d.qty); need(qty > 0, 'Enter a quantity greater than zero.');
+      need(!d.date || d.date <= today(), 'The received date can’t be in the future.');
       const ing = one('SELECT * FROM ingredients WHERE id=?', [+d.ingredient_id]);
       const c = num(d.cost), uc = c ? (d.costmode === 'unit' ? c : c / qty) : 0;
       const ts = d.date && d.date !== today() ? d.date + ' 12:00:00' : nowTs();
@@ -1847,7 +1897,7 @@ function adjust(id) {
       f.addEventListener('change', () => { const m = f.mode.value; $('#adjLabel').textContent = m === 'count' ? `What you counted (${i.unit})` : m === 'waste' ? `Amount wasted (${i.unit})` : `Change (${i.unit}); use a minus sign to remove`; }); },
     onSubmit: d => {
       need(d.qty.trim() !== '', 'Enter an amount.'); need(d.note.trim(), 'Enter a reason so the ledger explains this change.');
-      const n = num(d.qty);
+      const n = num(d.qty); need(d.mode !== 'count' || n >= 0, 'A counted amount can’t be negative.');
       const delta = d.mode === 'count' ? round(n - oh, 4) : d.mode === 'waste' ? -Math.abs(n) : n;
       need(delta !== 0, d.mode === 'count' ? 'The count matches what’s on hand, so nothing changes.' : 'Enter an amount other than zero.');
       tx(() => {
@@ -1881,7 +1931,7 @@ VIEWS.recipes = () => {
 };
 function lineRow(ings, l = {}) {
   return `<div class="lrow"><select name="ing[]" aria-label="Ingredient"><option value="">Choose ingredient…</option>${ings.map(i => `<option value="${i.id}" data-unit="${esc(i.unit)}" data-cost="${i.unit_cost || 0}"${i.id === l.ingredient_id ? ' selected' : ''}>${esc(i.name)}</option>`).join('')}</select>
-  <input name="qty[]" inputmode="decimal" placeholder="Qty" aria-label="Quantity per serving" value="${l.qty ?? ''}"><span class="u">${esc(l.unit || '')}</span><button type="button" class="btn sm ghost" data-act="rmLine" aria-label="Remove ingredient">×</button></div>`;
+  <input name="qty[]" inputmode="decimal" min="0" placeholder="Qty" aria-label="Quantity per serving" value="${l.qty ?? ''}"><span class="u">${esc(l.unit || '')}</span><button type="button" class="btn sm ghost" data-act="rmLine" aria-label="Remove ingredient">×</button></div>`;
 }
 function editRecipe(id) {
   const ings = ingredients();
@@ -1892,7 +1942,7 @@ function editRecipe(id) {
   modal({title: p ? `Edit ${p.name}` : 'Add a recipe', submit: p ? 'Save' : 'Add recipe', wide: true,
     body: `<div class="g3"><label class="f">Name<input name="name" required value="${esc(p ? p.name : '')}" placeholder="e.g. Spanish Latte (16 oz)"></label>
       <label class="f">Category<input name="category" list="pcats" value="${esc(p ? p.category || '' : '')}" placeholder="Iced coffee, Non-coffee"></label>
-      <label class="f">Price (₱)<input name="price" inputmode="decimal" required value="${p ? p.price : ''}"></label></div>
+      <label class="f">Price (₱)<input name="price" inputmode="decimal" min="0" required value="${p ? p.price : ''}"></label></div>
       <datalist id="pcats">${[...new Set(products(true).map(x => x.category).filter(Boolean))].map(c => `<option value="${esc(c)}">`).join('')}</datalist>
       <div><div style="font-size:13px;font-weight:600;color:var(--ink-2);margin-bottom:8px">Ingredients for one serving</div><div class="lines" id="lines">${lines.map(l => lineRow(ings, l)).join('')}</div>
       <button type="button" class="btn sm" style="margin-top:10px" data-act="addLine">${ic('plus')}Add ingredient</button></div>
@@ -2080,8 +2130,15 @@ function attSave(empId, date, patch) {
   const tt = termsOn(empId, date);   // break and regular hours are set per employee
   const row = {status: '', time_in: '', time_out: '', hours: 0, ot_hours: 0, note: '', ...(before || {}), ...patch};
   row.break_hours = tt ? tt.brk : Math.max(0, num(st.breakHours));   // fixed by the pay terms
-  { const span = calcHours(row.time_in, row.time_out); row.hours = span ? Math.max(0, round(span - row.break_hours, 2)) : 0; row.ot_hours = Math.max(0, round(row.hours - (tt ? tt.reg : st.regHours), 2)); }
-  if (!row.status && (row.time_in || row.time_out)) row.status = 'present';
+  { const span = calcHours(row.time_in, row.time_out);
+    need(!span || span <= 16, `${e.name}, ${prettyDate(date)}: ${fmtTime(row.time_in)} to ${fmtTime(row.time_out)} is ${fq(round(span, 2))} hours. Check AM and PM; shifts over 16 hours aren’t accepted.`);
+    row.hours = span ? Math.max(0, round(span - row.break_hours, 2)) : 0; row.ot_hours = Math.max(0, round(row.hours - (tt ? tt.reg : st.regHours), 2)); }
+  need(date <= today() || (!hasTimes(row) && !(ATT_UNIT[row.status] > 0)), `${e.name}, ${prettyDate(date)} is in the future. Only rest days, absences and leave can be set ahead.`);
+  // times and the status have to agree: typing times on an absent or rest day makes it a worked day
+  if (hasTimes(row) && ['', 'absent', 'rest'].includes(row.status)) {
+    if (!row.status || (('time_in' in patch && patch.time_in) || ('time_out' in patch && patch.time_out)) && !('status' in patch)) row.status = 'present';
+    else need(false, `${e.name}, ${prettyDate(date)} is marked ${ATT[row.status]} but has clock times. Clear the times first, or pick Present, Late or Half day.`);
+  }
   const pick = r => r && {status: r.status, time_in: r.time_in || '', time_out: r.time_out || '', break_hours: r.break_hours || 0, hours: r.hours || 0, ot_hours: r.ot_hours || 0, note: r.note || ''};
   if (!row.status && !row.time_in && !row.time_out && !row.note) {
     if (before) tx(() => { run('DELETE FROM attendance WHERE id=?', [before.id]); rec('attendance', before.id, true); audit('Attendance', 'Cleared', before.id, `${e.name}, ${prettyDate(date)}: record cleared`, pick(before), null); });
@@ -2116,11 +2173,11 @@ function employeesView() {
 }
 function termsFields(t = {}) {
   const v = k => t[k] == null ? '' : t[k];
-  return `<div class="g3"><label class="f">Daily rate (₱)<input name="daily" inputmode="decimal" required value="${esc(v('daily'))}"></label>
-    <label class="f">Regular hours a day<input name="reg" inputmode="decimal" required value="${esc(t.reg ?? 8)}"></label>
-    <label class="f">Unpaid break (hrs a day)<input name="brk" inputmode="decimal" required value="${esc(t.brk ?? 1)}"></label></div>
-    <div class="g2"><label class="f">Overtime bonus (₱ per hour) <small id="otSug"></small><input name="ot" inputmode="decimal" required value="${esc(v('ot'))}"></label>
-    <label class="f">Undertime penalty (₱ per hour) <small id="utSug"></small><input name="ut" inputmode="decimal" required value="${esc(v('ut'))}"></label></div>
+  return `<div class="g3"><label class="f">Daily rate (₱)<input name="daily" inputmode="decimal" min="0" required value="${esc(v('daily'))}"></label>
+    <label class="f">Regular hours a day<input name="reg" inputmode="decimal" min="0" max="24" required value="${esc(t.reg ?? 8)}"></label>
+    <label class="f">Unpaid break (hrs a day)<input name="brk" inputmode="decimal" min="0" max="8" required value="${esc(t.brk ?? 1)}"></label></div>
+    <div class="g2"><label class="f">Overtime bonus (₱ per hour) <small id="otSug"></small><input name="ot" inputmode="decimal" min="0" required value="${esc(v('ot'))}"></label>
+    <label class="f">Undertime penalty (₱ per hour) <small id="utSug"></small><input name="ut" inputmode="decimal" min="0" required value="${esc(v('ut'))}"></label></div>
     <p class="hint" style="margin:0">Each worked day pays the daily rate, plus the overtime bonus for every hour over the regular hours, minus the undertime penalty for every hour under. Hours worked are time in to time out minus the unpaid break.</p>`;
 }
 function termsHint(f) {
@@ -2142,7 +2199,7 @@ function readTerms(d) {
 const termsRow = t => ({pay_type: 'daily', rate: t.daily, reg_hours: t.reg, break_hours: t.brk, ot_rate: t.ot, ut_rate: t.ut});
 function employeeFields(e = {}) {
   return `<div class="g2"><label class="f">Full name<input name="name" required value="${esc(e.name || '')}"></label><label class="f">Role<input name="role" value="${esc(e.role || '')}" placeholder="Barista, Cashier"></label></div>
-  <div class="g2"><label class="f">Start date<input type="date" name="start_date" value="${esc(e.start_date || today())}"></label><label class="f">Paid leave days per year<input name="leave_credits" inputmode="decimal" value="${e.leave_credits ?? 5}"></label></div>`;
+  <div class="g2"><label class="f">Start date<input type="date" name="start_date" value="${esc(e.start_date || today())}"></label><label class="f">Paid leave days per year<input name="leave_credits" inputmode="decimal" min="0" max="366" value="${e.leave_credits ?? 5}"></label></div>`;
 }
 function addEmployee() {
   modal({title: 'Add employee', submit: 'Add employee',
@@ -2167,7 +2224,7 @@ function editEmployee(id) {
     <p class="hint" style="margin:0">To change pay, use “Change pay terms” so the old version stays on record.</p>`,
     onSubmit: d => {
       need(d.name.trim(), 'Enter a name.');
-      const after = {name: d.name.trim(), role: d.role.trim(), start_date: d.start_date, leave_credits: num(d.leave_credits), notes: d.notes.trim(), active: d.inactive ? 0 : 1};
+      const after = {name: d.name.trim(), role: d.role.trim(), start_date: d.start_date || e.start_date || today(), leave_credits: num(d.leave_credits), notes: d.notes.trim(), active: d.inactive ? 0 : 1};
       const before = Object.fromEntries(Object.keys(after).map(k => [k, e[k] ?? '']));
       const changed = Object.keys(after).filter(k => String(after[k]) !== String(before[k]));
       if (!changed.length) return;
@@ -2234,7 +2291,7 @@ function addLeave() {
   const emps = employees(); if (!emps.length) { toast('Add an employee first.', 'warn'); return; }
   modal({title: 'File a leave', submit: 'File leave',
     body: `<div class="g2"><label class="f">Employee<select name="employee_id">${opts(emps.map(e => [e.id, e.name]))}</select></label><label class="f">Type<select name="type">${opts(LEAVE_TYPES)}</select></label></div>
-    <div class="g3"><label class="f">From<input type="date" name="start_date" value="${today()}" required></label><label class="f">To<input type="date" name="end_date" value="${today()}" required></label><label class="f">Days <small>0.5 for a half day</small><input name="days" inputmode="decimal" value="1"></label></div>
+    <div class="g3"><label class="f">From<input type="date" name="start_date" value="${today()}" required></label><label class="f">To<input type="date" name="end_date" value="${today()}" required></label><label class="f">Days <small>0.5 for a half day</small><input name="days" inputmode="decimal" min="0" value="1"></label></div>
     <label class="chk"><input type="checkbox" name="paid" checked> Paid leave (uses leave credits)</label>
     <label class="f">Note<input name="note"></label>`,
     onOpen: f => { const sync = () => { if (f.start_date.value && f.end_date.value && f.end_date.value >= f.start_date.value) f.days.value = daysBetween(f.start_date.value, f.end_date.value) + 1; }; f.start_date.addEventListener('change', () => { if (f.end_date.value < f.start_date.value) f.end_date.value = f.start_date.value; sync(); }); f.end_date.addEventListener('change', sync); f.type.addEventListener('change', () => f.paid.checked = f.type.value !== 'Unpaid'); },
@@ -2355,6 +2412,7 @@ function newRun() {
     <label class="f">Note<input name="note" placeholder="optional"></label>`,
     onSubmit: async d => {
       need(d.s && d.e && d.e >= d.s, 'The end date must be on or after the start date.');
+      need(daysBetween(d.s, d.e) < 93, 'A payroll period can be up to 3 months. Split longer periods into separate runs.');
       need((d.emp || []).length, 'Include at least one employee.');
       const ov = one(`SELECT id FROM payroll_runs WHERE status='finalized' AND period_start<=? AND period_end>=?`, [d.e, d.s]);
       if (ov && !await ask({title: 'Overlapping payroll', body: `Finalized run #${ov.id} overlaps this period, so some days could be paid twice. Create this run anyway?`, ok: 'Create anyway'})) return false;
@@ -2362,6 +2420,7 @@ function newRun() {
       const lines = d.emp.map(id => computePay(one('SELECT * FROM employees WHERE id=?', [+id]), d.s, d.e, st));
       need(lines.every(Boolean), 'Every included employee needs pay terms. Set them with “Change pay terms”.');
       const total = round(lines.reduce((t, l) => t + l.net, 0));
+      await reserveIds({payroll_runs: 1, payroll_lines: lines.length, audit: 2});
       const id = tx(() => {
         const id = insert('payroll_runs', {period_start: d.s, period_end: d.e, status: 'draft', total, note: d.note.trim(), settings: JSON.stringify(st), created_at: nowTs()});
         lines.forEach(l => insert('payroll_lines', {run_id: id, employee_id: l.employee_id, name: l.name, gross: l.gross, adjustments: l.adjustments, net: l.net, details: JSON.stringify(l.details)}));
@@ -2682,7 +2741,7 @@ VIEWS.settings = () => {
 };
 function saveSettings(f) {
   const d = Object.fromEntries(new FormData(f)), before = settings();
-  const list = s => s.split(',').map(x => x.trim()).filter(Boolean);
+  const list = s => { const seen = new Set(); return s.split(',').map(x => x.trim().replace(/\s+/g, ' ')).filter(x => x && !seen.has(x.toLowerCase()) && seen.add(x.toLowerCase())); };   // no blanks or repeats
   const after = {business: d.business.trim() || 'Le Bean', tagline: d.tagline.trim(), channels: list(d.channels), payments: list(d.payments), regHours: before.regHours, otMult: before.otMult, factor: before.factor, breakHours: before.breakHours};   // kept only to read pay records made before per-employee terms
   if (!after.channels.length || !after.payments.length) { toast('Keep at least one channel and one payment method.', 'err'); return; }
   const changed = Object.keys(after).filter(k => JSON.stringify(after[k]) !== JSON.stringify(before[k]));
@@ -3905,7 +3964,7 @@ function ask({title, body = '', ok = 'Continue', cancel = 'Cancel', danger = fal
 const WASTE_REASONS = ['Spilled or dropped', 'Remade (wrong or bad item)', 'Customer complaint', 'Quality check / tasting', 'Expired or unsold', 'Other'];
 function wasteRow(prods, l = {}) {
   return `<div class="lrow wrow"><select name="wp[]" aria-label="Menu item"><option value="">Choose item…</option>${prods.map(p => `<option value="${p.id}"${p.id === l.pid ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
-  <input name="wq[]" inputmode="decimal" placeholder="Qty" aria-label="How many" value="${l.qty ?? 1}"><span class="u">each</span><button type="button" class="btn sm ghost" data-act="rmLine" aria-label="Remove">×</button></div>`;
+  <input name="wq[]" inputmode="decimal" min="0" max="1000" placeholder="Qty" aria-label="How many" value="${l.qty ?? 1}"><span class="u">each</span><button type="button" class="btn sm ghost" data-act="rmLine" aria-label="Remove">×</button></div>`;
 }
 function wasteItems(pid) {
   const prods = products();
@@ -3986,12 +4045,15 @@ function bulkRestock() {
   modal({title: `Restock ${ings.length} ingredients`, submit: 'Add to stock', wide: true,
     body: `<p class="hint" style="margin:0">Leave quantity empty to skip an item. Cost is the total you paid for that item (optional).</p>
       ${T([{h: 'Ingredient', main: 1, f: i => `<b>${esc(i.name)}</b> <span class="muted small">${fq(m[i.id] || 0)} ${esc(i.unit)} on hand</span>`},
-        {h: 'Quantity received', f: i => `<input name="q_${i.id}" inputmode="decimal" placeholder="0" style="width:110px"> <span class="small muted">${esc(i.unit)}</span>`},
-        {h: 'Total paid (₱)', f: i => `<input name="c_${i.id}" inputmode="decimal" placeholder="${i.unit_cost ? 'last ' + peso(i.unit_cost) + '/' + esc(i.unit) : 'optional'}" style="width:140px">`}], ings)}
+        {h: 'Quantity received', f: i => `<input name="q_${i.id}" inputmode="decimal" min="0" aria-label="Quantity of ${esc(i.name)}" placeholder="0" style="width:110px"> <span class="small muted">${esc(i.unit)}</span>`},
+        {h: 'Total paid (₱)', f: i => `<input name="c_${i.id}" inputmode="decimal" min="0" aria-label="Total paid for ${esc(i.name)}" placeholder="${i.unit_cost ? 'last ' + peso(i.unit_cost) + '/' + esc(i.unit) : 'optional'}" style="width:140px">`}], ings)}
       <div class="g2"><label class="f">Supplier<input name="supplier" placeholder="optional"></label><label class="f">Received on<input type="date" name="date" value="${today()}" max="${today()}"></label></div>`,
     onSubmit: d => {
+      const orphan = ings.find(i => num(d['c_' + i.id]) > 0 && !(num(d['q_' + i.id]) > 0));
+      need(!orphan, orphan ? `You entered what you paid for ${orphan.name} but no quantity. Add the quantity received, or clear the amount.` : '');
       const rows = ings.map(i => ({i, qty: num(d['q_' + i.id]), paid: num(d['c_' + i.id])})).filter(x => x.qty > 0);
       need(rows.length, 'Enter a quantity for at least one ingredient.');
+      need(!d.date || d.date <= today(), 'The received date can’t be in the future.');
       const ts = d.date && d.date !== today() ? d.date + ' 12:00:00' : nowTs();
       tx(() => rows.forEach(({i, qty, paid}) => {
         const uc = paid ? round(paid / qty, 4) : 0;
@@ -4007,7 +4069,7 @@ function bulkCount() {
   modal({title: `Stock count: ${ings.length} ingredients`, submit: 'Save counts', wide: true,
     body: `<p class="hint" style="margin:0">Enter what you physically counted. Leave blank to skip. Only differences are recorded.</p>
       ${T([{h: 'Ingredient', main: 1, f: i => `<b>${esc(i.name)}</b>`}, {h: 'On hand (app)', r: 1, f: i => `${fq(m[i.id] || 0)} ${esc(i.unit)}`},
-        {h: 'Counted', f: i => `<input name="n_${i.id}" inputmode="decimal" style="width:110px"> <span class="small muted">${esc(i.unit)}</span>`}], ings)}
+        {h: 'Counted', f: i => `<input name="n_${i.id}" inputmode="decimal" min="0" aria-label="Count of ${esc(i.name)}" style="width:110px"> <span class="small muted">${esc(i.unit)}</span>`}], ings)}
       <label class="f">Reason<input name="note" value="Stock count" required></label>`,
     onSubmit: d => {
       need(d.note.trim(), 'Enter a reason.');
@@ -4024,9 +4086,9 @@ function bulkCount() {
 function bulkReorder() {
   const ids = selected('ing'), ings = ids.map(id => one('SELECT * FROM ingredients WHERE id=?', [id])).filter(Boolean);
   modal({title: 'Set reorder levels', submit: 'Save', wide: true,
-    body: T([{h: 'Ingredient', main: 1, f: i => `<b>${esc(i.name)}</b>`}, {h: 'Reorder at', f: i => `<input name="r_${i.id}" inputmode="decimal" value="${i.reorder_level ?? 0}" style="width:110px"> <span class="small muted">${esc(i.unit)}</span>`}], ings),
+    body: T([{h: 'Ingredient', main: 1, f: i => `<b>${esc(i.name)}</b>`}, {h: 'Reorder at', f: i => `<input name="r_${i.id}" inputmode="decimal" min="0" aria-label="Reorder level of ${esc(i.name)}" value="${i.reorder_level ?? 0}" style="width:110px"> <span class="small muted">${esc(i.unit)}</span>`}], ings),
     onSubmit: d => {
-      const ch = ings.filter(i => num(d['r_' + i.id]) !== (i.reorder_level || 0));
+      const ch = ings.filter(i => String(d['r_' + i.id] ?? '').trim() !== '' && num(d['r_' + i.id]) !== (i.reorder_level || 0));
       if (!ch.length) return;
       tx(() => ch.forEach(i => { const v = num(d['r_' + i.id]); withNote('Reorder level changed', () => update('ingredients', i.id, {reorder_level: v})); audit('Inventory', 'Edited ingredient', i.id, `${i.name}: reorder level ${fq(i.reorder_level || 0)} to ${fq(v)}`, {reorder_level: i.reorder_level}, {reorder_level: v}); }));
       selSet('ing').clear(); toast(`Updated ${ch.length} reorder level${ch.length === 1 ? '' : 's'}.`);
@@ -4067,10 +4129,10 @@ function bulkPrice() {
   modal({title: `Change prices for ${list.length} item${list.length === 1 ? '' : 's'}`, submit: 'Save new prices', wide: true,
     body: `<div class="bar-row" style="margin:0"><label>Quick change<span class="inl" style="display:flex;gap:6px"><input id="bpAmt" inputmode="decimal" placeholder="+10 or -5" style="width:110px"><select id="bpType"><option value="amt">₱</option><option value="pct">%</option></select><button type="button" class="btn sm" data-act="bpApply">Apply to all</button></span></label></div>
       ${T([{h: 'Item', main: 1, f: p => `<b>${esc(p.name)}</b>`}, {h: 'Price now', r: 1, f: p => peso(p.price)}, {h: 'Cost', r: 1, f: p => peso(recipeCost(p.lines, ingMap))},
-        {h: 'New price', f: p => `<input name="p_${p.id}" class="bp" data-base="${p.price}" inputmode="decimal" value="${p.price}" style="width:110px">`}], list)}
+        {h: 'New price', f: p => `<input name="p_${p.id}" class="bp" data-base="${p.price}" inputmode="decimal" min="0" aria-label="New price of ${esc(p.name)}" value="${p.price}" style="width:110px">`}], list)}
       <label class="f">What changed? <small>Saved with each new version</small><input name="note" value="Price update"></label>`,
     onSubmit: d => {
-      const ch = list.filter(p => num(d['p_' + p.id]) !== p.price && num(d['p_' + p.id]) >= 0);
+      const ch = list.filter(p => String(d['p_' + p.id] ?? '').trim() !== '' && num(d['p_' + p.id]) !== p.price && num(d['p_' + p.id]) >= 0);
       if (!ch.length) return;
       const ts = nowTs();
       tx(() => ch.forEach(p => { const np = round(num(d['p_' + p.id])); const vid = insert('recipe_versions', {product_id: p.id, version: p.version + 1, price: np, lines: JSON.stringify(p.lines), note: d.note || 'Price update', created_at: ts}); update('products', p.id, {current_version: vid}); audit('Recipes', 'New version', p.id, `${p.name}: price ${peso(p.price)} to ${peso(np)}`, {version: p.version, price: p.price}, {version: p.version + 1, price: np}); }));
@@ -4113,6 +4175,7 @@ function fillAttendance() {
         todo.push([id, day]);
       }
       need(todo.length, 'Nothing to fill: every chosen day is already marked or skipped.');
+      await reserveIds({attendance: todo.length, audit: todo.length});
       if (!await ask({title: `Fill ${todo.length} attendance record${todo.length === 1 ? '' : 's'}?`, body: `${esc(ATT[d.status])}${d.tin ? `, ${esc(fmtTime(d.tin))}` : ''}${d.tout ? ` to ${esc(fmtTime(d.tout))}` : ''} for ${d.emp.length} ${d.emp.length === 1 ? 'person' : 'people'} from ${esc(prettyDate(d.from))} to ${esc(prettyDate(d.to))}.`, ok: 'Fill'})) return false;
       todo.forEach(([id, day]) => attSave(id, day, {status: d.status, ...(d.tin ? {time_in: d.tin} : {}), ...(d.tout ? {time_out: d.tout} : {})}));
       toast(`Filled ${todo.length} attendance record${todo.length === 1 ? '' : 's'}.`);
@@ -4125,8 +4188,8 @@ function addAdj(preIds) {
   modal({title: 'Add adjustment', submit: 'Add adjustment',
     body: `<div class="f">For<div class="chkgrid">${emps.map(e => `<label class="chk"><input type="checkbox" name="emp[]" value="${e.id}" ${pre.has(e.id) ? 'checked' : ''}> ${esc(e.name)}</label>`).join('')}</div><button type="button" class="btn sm ghost" style="align-self:flex-start" data-act="checkAll">Select everyone</button></div>
     <div class="g3"><label class="f">Kind<select name="kind"><optgroup label="Adds to pay">${opts(Object.keys(ADJ).filter(k => ADJ[k] > 0))}</optgroup><optgroup label="Deducts from pay">${opts(Object.keys(ADJ).filter(k => ADJ[k] < 0))}</optgroup></select></label>
-    <label class="f">Amount each (₱) <small id="adjAmtHint"></small><input name="amount" inputmode="decimal"></label><label class="f">Date<input type="date" name="date" value="${today()}"></label></div>
-    <label class="f" id="adjHrs" hidden>Hours <small>Priced at each person’s overtime or undertime rate on that date, from their pay terms</small><input name="hours" inputmode="decimal" placeholder="e.g. 0.5"></label>
+    <label class="f">Amount each (₱) <small id="adjAmtHint"></small><input name="amount" inputmode="decimal" min="0"></label><label class="f">Date<input type="date" name="date" value="${today()}"></label></div>
+    <label class="f" id="adjHrs" hidden>Hours <small>Priced at each person’s overtime or undertime rate on that date, from their pay terms</small><input name="hours" inputmode="decimal" min="0" max="24" placeholder="e.g. 0.5"></label>
     <label class="f">Note<input name="note" placeholder="What it’s for, e.g. worked through the break"></label>`,
     onOpen: f => { const sync = () => { const m = MANUAL_TIME[f.kind.value]; $('#adjHrs').hidden = !m; $('#adjAmtHint').textContent = m ? 'Or leave blank and enter hours' : ''; }; f.kind.addEventListener('change', sync); sync(); },
     onSubmit: d => {
@@ -4145,11 +4208,13 @@ function addAdj(preIds) {
 function parseCsv(text) {
   const rows = []; let row = [], cur = '', inQ = false;
   text = text.replace(/^﻿/, '');
+  const first = text.split(/\r?\n/, 1)[0].replace(/"[^"]*"/g, ''), cnt = ch => first.split(ch).length - 1;
+  const SEP = cnt(';') > cnt(',') && cnt(';') >= cnt('\t') ? ';' : cnt('\t') > cnt(',') ? '\t' : ',';
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (inQ) { if (ch === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else inQ = false; } else cur += ch; }
     else if (ch === '"') inQ = true;
-    else if (ch === ',') { row.push(cur); cur = ''; }
+    else if (ch === SEP) { row.push(cur); cur = ''; }
     else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; }
     else cur += ch;
   }
@@ -4160,28 +4225,65 @@ const IMPORT_COLS = [['name', 'Ingredient'], ['unit', 'Unit'], ['category', 'Cat
 function importTemplate() {
   download(new Blob([csvText([{name: 'Fresh milk', unit: 'ml', category: 'Dairy', reorder_level: 2000, unit_cost: 0.11, on_hand: 12000}, {name: 'Espresso beans', unit: 'g', category: 'Coffee', reorder_level: 500, unit_cost: 1.6, on_hand: 3000}], IMPORT_COLS)], {type: 'text/csv'}), 'lebean-ingredients-template.csv');
 }
+// read a CSV file the user picked; explain Excel files, other formats and very large files
+async function readCsvFile(file) {
+  if (/\.(xlsx|xlsm|xls|numbers|ods)$/i.test(file.name)) { toast('That’s a spreadsheet file. In Excel or Google Sheets, use “Save as” or “Download” → CSV, then import the .csv file.', 'err'); return null; }
+  if (file.size > 10 * 1024 * 1024) { toast('That file is over 10 MB. Split it into smaller CSV files.', 'err'); return null; }
+  const buf = new Uint8Array(await file.arrayBuffer());
+  if (buf[0] === 0x50 && buf[1] === 0x4B) { toast('That looks like an Excel file, not a CSV. Save it as CSV first.', 'err'); return null; }
+  let text;
+  if ((buf[0] === 0xFF && buf[1] === 0xFE) || (buf[0] === 0xFE && buf[1] === 0xFF)) text = new TextDecoder(buf[0] === 0xFF ? 'utf-16le' : 'utf-16be').decode(buf);   // Excel “Unicode text”
+  else text = new TextDecoder('utf-8').decode(buf);
+  if (/\u0000/.test(text.slice(0, 2000))) { toast('That file isn’t a text CSV. Save it as CSV (UTF-8) and try again.', 'err'); return null; }
+  return parseCsv(text);
+}
 async function importIngredients(file) {
-  const rows = parseCsv(await file.text());
+  const rows = await readCsvFile(file); if (!rows) return;
   if (rows.length < 2) { toast('That file has no rows to import.', 'warn'); return; }
   const head0 = rows[0].map(h => h.trim().toLowerCase());
   const idx = k => { const alias = {name: ['ingredient', 'name', 'item'], unit: ['unit', 'uom'], category: ['category', 'group'], reorder_level: ['reorder at', 'reorder', 'reorder level', 'par'], unit_cost: ['cost per unit', 'unit cost', 'cost'], on_hand: ['on hand', 'stock', 'quantity', 'qty']}[k]; return head0.findIndex(h => alias.includes(h)); };
   const ix = Object.fromEntries(IMPORT_COLS.map(([k]) => [k, idx(k)]));
   if (ix.name < 0 || ix.unit < 0) { toast('The file needs at least “Ingredient” and “Unit” columns. Download the template to see the format.', 'err'); return; }
-  const existing = Object.fromEntries(ingredients(true).map(i => [i.name.toLowerCase(), i]));
-  const items = rows.slice(1).map(r => { const g = k => ix[k] >= 0 ? (r[ix[k]] || '').trim() : ''; const name = g('name'), ex = existing[name.toLowerCase()];
-    return {name, unit: g('unit'), category: g('category'), reorder_level: num(g('reorder_level')), unit_cost: num(g('unit_cost')), on_hand: g('on_hand') === '' ? null : num(g('on_hand')), status: !name || !g('unit') ? 'skip' : ex ? 'update' : 'new', ex}; });
-  const nNew = items.filter(x => x.status === 'new').length, nUpd = items.filter(x => x.status === 'update').length;
-  modal({title: `Import ${items.length} ingredient row${items.length === 1 ? '' : 's'}`, submit: `Import ${nNew + nUpd}`, wide: true,
-    body: `<p style="margin:0">${nNew} new, ${nUpd} already in the app (their reorder level, cost and category will be updated; stock isn’t changed), ${items.length - nNew - nUpd} skipped for a missing name or unit.</p>
-      ${T([{h: 'Ingredient', main: 1, f: x => `<b>${esc(x.name || '(no name)')}</b> ${chip(x.status === 'new' ? 'New' : x.status === 'update' ? 'Update' : 'Skip', x.status === 'new' ? 'ok' : x.status === 'update' ? 'info' : 'bad')}`}, {h: 'Unit', k: 'unit'}, {h: 'Category', k: 'category'}, {h: 'Reorder at', r: 1, f: x => fq(x.reorder_level)}, {h: 'Cost', r: 1, f: x => x.unit_cost ? peso(x.unit_cost) : ''}, {h: 'Opening stock', r: 1, f: x => x.status === 'new' && x.on_hand != null ? fq(x.on_hand) : ''}], items.slice(0, 200))}`,
-    onSubmit: () => {
+  const existing = Object.fromEntries(ingredients(true).map(i => [i.name.trim().toLowerCase(), i])), seen = new Set();
+  const items = rows.slice(1).map((r, k) => {
+    const g = c => ix[c] >= 0 ? (r[ix[c]] || '').trim() : '', name = g('name').replace(/\s+/g, ' '), unit = g('unit'), key = name.toLowerCase(), ex = existing[key], problems = [];
+    const nv = (c, label) => { const v = g(c); if (v === '') return null; const n = numStrict(v); if (!isFinite(n)) { problems.push(`${label} “${v}” isn’t a number`); return null; } if (n < 0) { problems.push(`${label} can’t be negative`); return null; } return n; };
+    const x = {row: k + 2, name, unit, category: g('category'), reorder_level: nv('reorder_level', 'reorder level'), unit_cost: nv('unit_cost', 'cost'), on_hand: nv('on_hand', 'stock'), ex, problems, notes: []};
+    if (!name) problems.push('no ingredient name');
+    if (!unit) problems.push('no unit');
+    if (name && seen.has(key)) problems.push('listed more than once in the file'); else if (name) seen.add(key);
+    if (ex && unit && unit.toLowerCase() !== ex.unit.toLowerCase()) problems.push(`the app counts ${ex.name} in ${ex.unit}, not ${unit}`);
+    if (problems.length) x.status = 'error';
+    else if (!ex) x.status = 'new';
+    else {
+      x.after = {category: x.category || ex.category || '', reorder_level: x.reorder_level ?? ex.reorder_level ?? 0, unit_cost: x.unit_cost ?? ex.unit_cost ?? 0};
+      x.before = {category: ex.category || '', reorder_level: ex.reorder_level ?? 0, unit_cost: ex.unit_cost ?? 0};
+      x.status = JSON.stringify(x.after) === JSON.stringify(x.before) ? 'same' : 'update';
+      if (x.on_hand != null) x.notes.push('stock isn’t changed for existing ingredients; use Stock count');
+      if (!ex.active) x.notes.push('archived; stays archived');
+    }
+    return x;
+  });
+  const cnt = st => items.filter(x => x.status === st).length, nNew = cnt('new'), nUpd = cnt('update'), nErr = cnt('error'), nSame = cnt('same');
+  const order = {error: 0, new: 1, update: 2, same: 3}, shown = items.slice().sort((a, b) => order[a.status] - order[b.status] || a.row - b.row).slice(0, 300);
+  const ST = {new: ['New', 'ok'], update: ['Update', 'info'], same: ['No change', ''], error: ['Skipped', 'bad']};
+  modal({title: `Import ${items.length} ingredient row${items.length === 1 ? '' : 's'}`, submit: nNew + nUpd ? `Import ${nNew + nUpd}` : undefined, wide: true,
+    body: `<p style="margin:0">${nNew} new, ${nUpd} to update (blank cells keep what’s in the app)${nSame ? `, ${nSame} unchanged` : ''}${nErr ? `, <b>${nErr} skipped</b> (reasons below; fix them in the file and import again)` : ''}.</p>
+      ${T([{h: 'Row', r: 1, f: x => x.row}, {h: 'Ingredient', main: 1, f: x => `<b>${esc(x.name || '(no name)')}</b> ${chip(ST[x.status][0], ST[x.status][1])}${x.problems.length ? `<div class="small minus">${esc(x.problems.join('; '))}</div>` : ''}${x.notes.length ? `<div class="small muted">${esc(x.notes.join('; '))}</div>` : ''}`},
+        {h: 'Unit', f: x => esc(x.unit)}, {h: 'Category', f: x => esc(x.status === 'update' ? x.after.category : x.category)},
+        {h: 'Reorder at', r: 1, f: x => x.status === 'update' ? `${fq(x.after.reorder_level)}${x.after.reorder_level !== x.before.reorder_level ? `<div class="small muted">was ${fq(x.before.reorder_level)}</div>` : ''}` : x.reorder_level != null ? fq(x.reorder_level) : ''},
+        {h: 'Cost', r: 1, f: x => x.status === 'update' ? `${peso(x.after.unit_cost)}${x.after.unit_cost !== x.before.unit_cost ? `<div class="small muted">was ${peso(x.before.unit_cost)}</div>` : ''}` : x.unit_cost != null ? peso(x.unit_cost) : ''},
+        {h: 'Opening stock', r: 1, f: x => x.status === 'new' && x.on_hand ? fq(x.on_hand) : ''}], shown)}
+      ${items.length > shown.length ? `<p class="hint" style="margin:0">Showing ${shown.length} of ${items.length} rows (skipped rows first).</p>` : ''}`,
+    onSubmit: async () => {
       need(nNew + nUpd, 'There’s nothing to import.');
+      await reserveIds({ingredients: nNew, stock_moves: nNew, ingredient_versions: nNew + nUpd, audit: nNew + nUpd + 2});
       const ts = nowTs();
       withNote('Imported from CSV', () => tx(() => items.forEach(x => {
-        if (x.status === 'new') { const row = {name: x.name, unit: x.unit, category: x.category, reorder_level: x.reorder_level, unit_cost: x.unit_cost, active: 1, created_at: ts}; const id = insert('ingredients', row); audit('Inventory', 'Added ingredient', id, `Imported ${x.name} (${x.unit})`, null, row); if (x.on_hand) insert('stock_moves', {ts, ingredient_id: id, qty: x.on_hand, unit_cost: x.unit_cost, type: 'opening', note: 'Opening stock (import)'}); }
-        else if (x.status === 'update') { const after = {category: x.category || x.ex.category, reorder_level: x.reorder_level, unit_cost: x.unit_cost || x.ex.unit_cost}; const before = {category: x.ex.category, reorder_level: x.ex.reorder_level, unit_cost: x.ex.unit_cost}; if (JSON.stringify(after) !== JSON.stringify(before)) { update('ingredients', x.ex.id, after); audit('Inventory', 'Edited ingredient', x.ex.id, `${x.ex.name}: updated from import`, before, after); } }
+        if (x.status === 'new') { const row = {name: x.name, unit: x.unit, category: x.category, reorder_level: x.reorder_level || 0, unit_cost: x.unit_cost || 0, active: 1, created_at: ts}; const id = insert('ingredients', row); audit('Inventory', 'Added ingredient', id, `Imported ${x.name} (${x.unit})`, null, row); if (x.on_hand) { insert('stock_moves', {ts, ingredient_id: id, qty: x.on_hand, unit_cost: row.unit_cost, type: 'opening', note: 'Opening stock (import)'}); } }
+        else if (x.status === 'update') { update('ingredients', x.ex.id, x.after); audit('Inventory', 'Edited ingredient', x.ex.id, `${x.ex.name}: updated from import`, x.before, x.after); }
       })));
-      toast(`Imported ${nNew} new and updated ${nUpd}.`);
+      toast(`Imported ${nNew} new and updated ${nUpd}.${nErr ? ` ${nErr} row${nErr === 1 ? '' : 's'} skipped.` : ''}`);
     }});
 }
 
@@ -4497,7 +4599,7 @@ function addExpense(id, dir0) {
   modal({title: x ? `Edit ${dir === 'in' ? 'money in' : 'expense'}` : dir === 'in' ? 'Record money in' : 'Add expense', submit: x ? 'Save changes' : dir === 'in' ? 'Record' : 'Add expense',
     body: `${dir === 'in' ? '<p class="hint" style="margin:0">For money that isn’t a sale in the order screen, like an event deposit or a supplier rebate.</p>' : ''}
     <div class="g2"><label class="f">Category<input name="category" list="excats" required value="${esc(x ? x.category : '')}" placeholder="${dir === 'in' ? 'e.g. Event deposit' : 'e.g. Rent'}" autocomplete="off"></label>
-    <label class="f">Amount (₱)<input name="amount" inputmode="decimal" required value="${x ? x.amount : ''}" placeholder="0.00"></label></div>
+    <label class="f">Amount (₱)<input name="amount" inputmode="decimal" min="0" required value="${x ? x.amount : ''}" placeholder="0.00"></label></div>
     <datalist id="excats">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>
     <div class="chips-pick">${cats.slice(0, dir === 'in' ? 4 : 8).map(c => `<button type="button" class="pill" data-act="pickCat" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div>
     <label class="f">Description<input name="description" value="${esc(x ? x.description || '' : '')}" placeholder="${dir === 'in' ? 'e.g. Deposit for Santos wedding' : 'e.g. October rent'}"></label>
@@ -4506,6 +4608,7 @@ function addExpense(id, dir0) {
     <label class="f">Note<input name="note" value="${esc(x ? x.note || '' : '')}" placeholder="Receipt or invoice no., anything to remember"></label>
     ${!x && dir === 'out' ? `<label class="chk"><input type="checkbox" name="repeat"> Repeat this every month <small class="muted">(added to Recurring)</small></label>` : ''}`,
     onSubmit: d => {
+      if (x) need(one('SELECT status FROM expenses WHERE id=?', [x.id]).status !== 'voided', 'This entry was voided, so it can’t be changed.');
       const amount = round(num(d.amount)); need(amount > 0, 'Enter an amount greater than zero.');
       need(d.category.trim(), 'Choose or type a category.'); need(d.date, 'Pick a date.');
       const row = {date: d.date, direction: dir, category: d.category.trim(), description: d.description.trim(), amount, payment: d.payment || '', note: d.note.trim()};
@@ -4580,10 +4683,10 @@ function recurringView() {
 function editRecurring(id) {
   const x = id ? one('SELECT * FROM recurring_expenses WHERE id=?', [id]) : null, st = settings();
   modal({title: x ? 'Edit recurring entry' : 'Add recurring entry', submit: x ? 'Save' : 'Add',
-    body: `<div class="g2"><label class="f">Category<input name="category" list="rcats" required value="${esc(x ? x.category : '')}" placeholder="e.g. Rent"></label><label class="f">Amount each month (₱)<input name="amount" inputmode="decimal" required value="${x ? x.amount : ''}"></label></div>
+    body: `<div class="g2"><label class="f">Category<input name="category" list="rcats" required value="${esc(x ? x.category : '')}" placeholder="e.g. Rent"></label><label class="f">Amount each month (₱)<input name="amount" inputmode="decimal" min="0" required value="${x ? x.amount : ''}"></label></div>
     <datalist id="rcats">${expCats('out').map(c => `<option value="${esc(c)}">`).join('')}</datalist>
     <label class="f">Description<input name="description" value="${esc(x ? x.description || '' : '')}" placeholder="e.g. Shop rent"></label>
-    <div class="g2"><label class="f">Day of month <small>1 to 28</small><input name="day" type="number" min="1" max="28" required value="${x ? x.day : 5}"></label><label class="f">Paid with<select name="payment">${opts(['', ...st.payments.filter(p => p !== 'GrabFood')].map(p => [p, p || 'Not specified']), x ? x.payment : '')}</select></label></div>
+    <div class="g2"><label class="f">Day of month <small>1 to 28</small><input name="day" type="number" min="1" max="28" data-int="1" required value="${x ? x.day : 5}"></label><label class="f">Paid with<select name="payment">${opts(['', ...st.payments.filter(p => p !== 'GrabFood')].map(p => [p, p || 'Not specified']), x ? x.payment : '')}</select></label></div>
     ${x ? `<label class="chk"><input type="checkbox" name="paused" ${x.active ? '' : 'checked'}> Paused (stop offering to add it)</label>` : `<label class="chk"><input type="checkbox" name="already" checked> Already paid this month (don’t add it for ${esc(parseD(today()).toLocaleDateString('en-PH', {month: 'long'}))})</label>`}`,
     onSubmit: d => {
       const amount = round(num(d.amount)); need(amount > 0, 'Enter an amount greater than zero.'); need(d.category.trim(), 'Enter a category.');
@@ -4645,26 +4748,29 @@ function recipeTemplate() {
   download(new Blob([csvText(rows, RIMP_COLS)], {type: 'text/csv'}), prods.length && can('backup') ? `lebean-recipes-${today()}.csv` : 'lebean-recipes-template.csv');
 }
 async function importRecipes(file) {
-  const rows = parseCsv(await file.text());
+  const rows = await readCsvFile(file); if (!rows) return;
   if (rows.length < 2) { toast('That file has no rows to import.', 'warn'); return; }
   const head0 = rows[0].map(h => h.trim().toLowerCase());
   const alias = {item: ['item', 'menu item', 'product', 'recipe', 'name'], category: ['category', 'group'], price: ['price', 'selling price', 'srp'], ingredient: ['ingredient'], qty: ['qty per serving', 'qty', 'quantity', 'amount', 'per serving'], unit: ['unit', 'uom']};
   const ix = Object.fromEntries(Object.keys(alias).map(k => [k, head0.findIndex(h => alias[k].includes(h))]));
   if (ix.item < 0 || ix.ingredient < 0 || ix.qty < 0) { toast('The file needs “Item”, “Ingredient” and “Qty per serving” columns. Download the template to see the format.', 'err'); return; }
-  const ingByName = Object.fromEntries(ingredients(true).map(i => [i.name.toLowerCase(), i]));
-  const prodByName = Object.fromEntries(products(true).map(p => [p.name.toLowerCase(), p]));
+  const ingByName = Object.fromEntries(ingredients(true).map(i => [i.name.trim().replace(/\s+/g, ' ').toLowerCase(), i]));
+  const prodByName = Object.fromEntries(products(true).map(p => [p.name.trim().toLowerCase(), p]));
   const groups = new Map();
   rows.slice(1).forEach(r => {
     const g = k => ix[k] >= 0 ? (r[ix[k]] || '').trim() : '';
-    const name = g('item'); if (!name) return;
+    const name = g('item').replace(/\s+/g, ' '); if (!name) return;
     const key = name.toLowerCase(), x = groups.get(key) || {name, category: '', price: '', lines: [], problems: []};
     if (g('category') && !x.category) x.category = g('category');
-    if (g('price') !== '' && x.price === '') x.price = g('price');
+    if (g('price') !== '') { if (x.price === '') x.price = g('price'); else if (numStrict(g('price')) !== numStrict(x.price) && !x.problems.includes('different prices on different rows')) x.problems.push('different prices on different rows'); }
     const iname = g('ingredient');
     if (iname) {
-      const ing = ingByName[iname.toLowerCase()], qty = num(g('qty'));
+      const ing = ingByName[iname.replace(/\s+/g, ' ').toLowerCase()], qty = numStrict(g('qty'));
       if (!ing) x.problems.push(`unknown ingredient “${iname}”`);
-      else if (!(qty > 0)) x.problems.push(`no quantity for ${ing.name}`);
+      else if (!ing.active) x.problems.push(`${ing.name} is archived in Inventory; restore it first`);
+      else if (g('qty') === '') x.problems.push(`no quantity for ${ing.name}`);
+      else if (!isFinite(qty)) x.problems.push(`quantity “${g('qty')}” for ${ing.name} isn’t a number`);
+      else if (!(qty > 0)) x.problems.push(`quantity for ${ing.name} must be more than zero`);
       else if (g('unit') && g('unit').toLowerCase() !== ing.unit.toLowerCase()) x.problems.push(`${ing.name} is counted in ${ing.unit}, not ${g('unit')}`);
       else if (x.lines.some(l => l.ingredient_id === ing.id)) x.problems.push(`${ing.name} is listed twice`);
       else x.lines.push({ingredient_id: ing.id, name: ing.name, unit: ing.unit, qty});
@@ -4673,8 +4779,10 @@ async function importRecipes(file) {
   });
   const items = [...groups.values()].map(x => {
     const ex = prodByName[x.name.toLowerCase()];
-    const price = x.price === '' ? (ex ? ex.price : NaN) : num(x.price);
-    if (!(price >= 0) || Number.isNaN(price)) x.problems.push('no price');
+    const price = x.price === '' ? (ex ? ex.price : NaN) : numStrict(x.price);
+    if (x.price === '' && !ex) x.problems.push('no price');
+    else if (!isFinite(price)) x.problems.push(`price “${x.price}” isn’t a number`);
+    else if (price < 0) x.problems.push('price can’t be negative');
     if (!x.lines.length && !x.problems.length) x.problems.push('no ingredients');
     const same = ex && price === ex.price && JSON.stringify(x.lines.map(l => [l.ingredient_id, l.qty]).sort()) === JSON.stringify(ex.lines.map(l => [l.ingredient_id, l.qty]).sort());
     const catChange = ex && x.category && x.category !== (ex.category || '');
@@ -4935,11 +5043,31 @@ function startLive() {
 function takeId(t) {
   const pool = S.pool[t] ||= [];
   while (pool.length && pool[0][0] > pool[0][1]) pool.shift();
-  if (!pool.length) { refillIds([t]); throw new Error('Still getting ready to save. Try again in a moment.'); }
+  if (!pool.length) {
+    if (S.inTx) { (S.idShort ||= {})[t] = (S.idShort[t] || 0) + 1; return 9e15 + (S.idTmp = (S.idTmp || 0) + 1); }   // placeholder: the transaction is undone and run again
+    throw idShortErr({[t]: 1});
+  }
   const id = pool[0][0]++;
   const left = pool.reduce((s, [a, b]) => s + Math.max(0, b - a + 1), 0);
   if (left < Math.ceil((ID_BLOCK[t] || 4) / 2)) refillIds([t]);
   return id;
+}
+function idShortErr(need) { const e = new Error('Couldn’t reserve record numbers for this save. Check the connection and try again.'); e.idShort = {...need}; return e; }
+// reserve enough ids for a big save (imports, bulk changes) in one round trip
+async function reserveIds(need) {
+  if (!cloudOn()) return;
+  const req = {};
+  Object.entries(need).forEach(([t, n]) => { if (t === 'meta' || !(n > 0)) return; const left = (S.pool[t] || []).reduce((s, [a, b]) => s + Math.max(0, b - a + 1), 0); const want = n - left; if (want > 0) req[t] = Math.min(5000, want + (ID_BLOCK[t] || 4)); });
+  if (!Object.keys(req).length) return;
+  const got = await rpc('lb_reserve_many', {req, ds: S.ds});
+  Object.entries(got).forEach(([t, s0]) => (S.pool[t] ||= []).push([+s0, +s0 + req[t] - 1]));
+}
+// run a save; if it needed more ids than were reserved, reserve exactly that many and run it once more
+async function withIds(fn) {
+  for (let i = 0; ; i++) {
+    try { return await fn(); }
+    catch (e) { if (!e.idShort || i >= 3 || !cloudOn()) throw e; await reserveIds(Object.fromEntries(Object.entries(e.idShort).map(([t, n]) => [t, n * 2]))); }
+  }
 }
 async function refillIds(tables) {
   const req = {}; tables.filter(t => t !== 'meta' && !(S.refilling ||= new Set()).has(t)).forEach(t => { req[t] = ID_BLOCK[t] || 4; S.refilling.add(t); });
@@ -5735,7 +5863,7 @@ document.addEventListener('click', e => {
   if (need0 && !can(need0)) { e.preventDefault(); toast('Your role doesn’t include that.', 'warn'); return; }
   e.preventDefault();
   try {
-    const r = fn(b.dataset, b, e);
+    let r; try { r = fn(b.dataset, b, e); } catch (err) { if (!err.idShort) throw err; r = withIds(() => fn(b.dataset, b, e)); }
     if (r && r.then) { const sp = b.classList.contains('btn') && !b.classList.contains('busy'); if (sp) b.classList.add('busy'); r.catch(err => { toast(err.message, 'err'); console.error(err); }).finally(() => sp && b.classList.remove('busy')); }
   } catch (err) { toast(err.message, 'err'); console.error(err); }
 });
