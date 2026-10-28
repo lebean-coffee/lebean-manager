@@ -242,6 +242,9 @@ td.act{text-align:right;white-space:nowrap}
 #tip{position:fixed;z-index:120;pointer-events:none;background:#3B2507;color:#FFF8DD;font-size:12.5px;padding:7px 10px;border-radius:8px;max-width:260px;line-height:1.4;box-shadow:0 8px 24px -8px rgba(0,0,0,.4);opacity:0;transition:opacity .08s}
 :root[data-theme=dark] #tip{background:#F3EDB5;color:#3B2507}
 #tip.on{opacity:1}
+#tip.gt{max-width:300px;font-size:12.5px}
+body.guided :is(th, .tile .k, dl.kv dt)[data-gt]:not([data-gt=""]){text-decoration:underline dotted color-mix(in srgb, currentColor 45%, transparent);text-underline-offset:3px;cursor:help}
+body.guided label.f[data-gt]:not([data-gt=""]) > :is(span:first-child){text-decoration:underline dotted color-mix(in srgb, currentColor 45%, transparent);text-underline-offset:3px}
 
 /* forecast */
 .fc-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
@@ -2880,8 +2883,9 @@ VIEWS.settings = () => {
       <div class="f">Theme<span class="seg">${[['system', 'Match device'], ['light', 'Light'], ['dark', 'Dark']].map(([k, t]) => `<button data-act="setTheme" data-v="${k}" class="${PREF.get('theme', 'system') === k ? 'on' : ''}">${t}</button>`).join('')}</span></div>
       <div class="f">Style<div class="choice">${[['default', 'Rounded', 'Rounded corners and the Le Bean brand fonts. The standard look.'], ['sharp', 'Sharp', 'Square corners and a plain, professional typeface.']].map(([k, t, dsc]) => `<label><input type="radio" name="style" data-act="setStyle" data-v="${k}" ${PREF.get('style', 'default') === k ? 'checked' : ''}><b>${t}</b>${dsc}</label>`).join('')}</div></div>
       <div class="f">Animations<div class="choice">${[['lively', 'On', 'Pages glide in, charts grow and lines draw, numbers count up, and tabs slide.'], ['classic', 'Off', 'Instant and still. No motion.']].map(([k, t, dsc]) => `<label><input type="radio" name="look" data-act="setLook" data-v="${k}" ${PREF.get('look', 'lively') === k ? 'checked' : ''}><b>${t}</b>${dsc}</label>`).join('')}</div></div>
+      <div class="f">Guided mode<div class="choice">${[['on', 'On', 'Short explanations on buttons, tabs, fields and column names. Hover for a moment on a computer, or press and hold on a phone. Labels with a tip have a dotted underline.'], ['off', 'Off', 'No explanations. For when you know your way around.']].map(([k, t, dsc]) => `<label><input type="radio" name="guided" data-act="setGuided" data-v="${k}" ${PREF.get('guided', 'on') === k ? 'checked' : ''}><b>${t}</b>${dsc}</label>`).join('')}</div></div>
       <div class="f">Sidebar<span class="seg">${[['open', 'Expanded'], ['slim', 'Icons only']].map(([k, t]) => `<button data-act="setSide" data-v="${k}" class="${PREF.get('side', 'open') === k ? 'on' : ''}">${t}</button>`).join('')}</span></div>
-      <p class="hint" style="margin:0">Appearance is remembered on this device and browser.</p></div></div>
+      <p class="hint" style="margin:0">Appearance and guided mode are remembered on this device and browser.</p></div></div>
     ${!can('backup') ? '' : `<div class="card" id="backupCard"><h3>Backups and restore</h3>
       <p class="small" style="margin-top:0">The Excel file has one sheet per kind of record (orders, items, stock, recipes, staff, attendance, payroll, history). A .db backup is a standard SQLite database you can open in DB Browser for SQLite, Python or R. Restore accepts a .db backup or an older Le Bean .html file.</p>
       <div class="actions"><button class="btn" data-act="exportXlsx">${ic('dl')}Export everything to Excel</button><button class="btn" data-act="exportDb">${ic('dl')}Export .db backup</button><button class="btn" data-act="importDb">Restore from a file</button><button class="btn ghost" data-act="vacuum">Compact database</button>${cloudOn() && S.ds === 'live' ? '<button class="btn danger-ghost" data-act="replaceLive">Replace live data with a backup…</button><button class="btn danger-ghost" data-act="clearLive">Clear all live data…</button>' : ''}</div>
@@ -3145,6 +3149,7 @@ function applyPrefs() {
   const tc = document.querySelector('meta[name=theme-color]'); if (tc) tc.content = dark ? '#100B06' : '#3B2507';
   document.documentElement.dataset.style = PREF.get('style', 'default') === 'sharp' ? 'sharp' : 'default';
   document.body.classList.toggle('fx', PREF.get('look', 'lively') === 'lively');
+  document.body.classList.toggle('guided', PREF.get('guided', 'on') === 'on');
   const sh = $('.shell'); if (sh) sh.classList.toggle('slim', PREF.get('side', 'open') === 'slim');
   $$('[data-act=themeCycle]').forEach(b => { b.innerHTML = ic(dark ? 'sun' : 'moon'); b.title = dark ? 'Switch to light mode' : 'Switch to dark mode'; b.setAttribute('aria-label', b.title); });
   const st = $('#sideToggle'); if (st) { const slim = PREF.get('side', 'open') === 'slim'; st.title = slim ? 'Expand sidebar' : 'Collapse sidebar'; st.setAttribute('aria-label', st.title); st.setAttribute('aria-expanded', String(!slim)); st.innerHTML = ic(slim ? 'expand' : 'collapse'); }
@@ -5596,7 +5601,7 @@ function rolesGuide() {
       ['Two-step login (code from an authenticator app)', Y('Required'), Y('Required'), Y('Required')],
       ['Change their own password', Y(), Y(), Y()],
       ['Switch between the live shop and sample data', Y(), Y(), Y()],
-      ['Appearance: theme, style, animations, sidebar', Y(), Y(), Y()]]]
+      ['Appearance: theme, style, animations, guided mode, sidebar', Y(), Y(), Y()]]]
   ];
   modal({title: 'Roles and permissions', wide: true, closeLabel: 'Close',
     body: `<div class="rolecards">
@@ -5978,7 +5983,7 @@ const ACT = {
   guide: d => guide(d.k), tour: () => startTour(0), tourFrom: d => startTour(0, d.k === 'insights' ? 'analytics' : d.k),
   tourNext: () => tourStep(S.tourI + 1), tourPrev: () => tourStep(S.tourI - 1), tourEnd: () => endTour(),
   themeCycle: () => { PREF.set('theme', isDark() ? 'light' : 'dark'); applyPrefs(); renderView(); },
-  setTheme: d => { PREF.set('theme', d.v); applyPrefs(); renderView(); }, setLook: d => { PREF.set('look', d.v); applyPrefs(); go(S.view); }, setStyle: d => { PREF.set('style', d.v); applyPrefs(); renderView(); }, setSide: d => { PREF.set('side', d.v); applyPrefs(); renderView(); },
+  setTheme: d => { PREF.set('theme', d.v); applyPrefs(); renderView(); }, setGuided: d => { PREF.set('guided', d.v); applyPrefs(); if (d.v === 'off') $$('[data-gt]').forEach(el => delete el.dataset.gt); renderView(); toast(d.v === 'on' ? 'Guided mode on. Hover or press and hold for tips.' : 'Guided mode off.'); }, setLook: d => { PREF.set('look', d.v); applyPrefs(); go(S.view); }, setStyle: d => { PREF.set('style', d.v); applyPrefs(); renderView(); }, setSide: d => { PREF.set('side', d.v); applyPrefs(); renderView(); },
   sideToggle: () => { PREF.set('side', PREF.get('side', 'open') === 'slim' ? 'open' : 'slim'); applyPrefs(); },
   erase: () => eraseAll(),
   hideSetup: () => { tx(() => setMeta('setup_hidden', '1')); S.setupOpen = false; renderView(); toast('Setup steps hidden. Bring them back with Get set up at the top of Overview.'); },
@@ -6101,11 +6106,131 @@ document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.ke
 window.addEventListener('beforeunload', e => { if (S.attDraft && Object.keys(S.attDraft).length) { e.preventDefault(); e.returnValue = ''; } });
 window.addEventListener('beforeunload', e => { if (S.dirty || S.saving) { if (S.handle) saveNow(); e.preventDefault(); e.returnValue = ''; } });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && S.handle && S.dirty) saveNow(); });
+
+/* ================= Guided mode: short explanations on hover (desktop) or press-and-hold (touch) ================= */
+// tips are looked up by what an element does (its action), which section or tab it opens, which form field it is, or its column/tile name
+const GT = {
+  act: {
+    go: {overview: 'Today at a glance: sales, best sellers, low stock, alerts and who’s working.', pos: 'Record a sale. Ingredients or ready-to-serve stock come out automatically.', orders: 'Every order, with the recipe and stock it used. Open one to see details or void it.',
+      inventory: 'Raw stock (ingredients) and ready-to-serve stock (items made ahead), plus the purchase list and stock ledger.', recipes: 'Menu items: price, ingredients per serving, cost, margin and default prep type.',
+      staff: 'Attendance, employees and their pay terms, leaves, adjustments and payroll runs.', cashflow: 'Money in and out: sales, purchases, payroll, expenses and recurring costs.',
+      analytics: 'Charts and tables for any period, a forecast, what-if pricing, alerts and the monthly report.', history: 'Every change anyone made, with who, when, and the values before and after.',
+      team: 'Who has logged in and when, and which data they opened.', settings: 'Shop settings, appearance, your account, the team, backups and data tools.'},
+    tab: {
+      inventory: {stock: 'Ingredients you buy and use, like fresh milk. Each restock, order, count and waste moves these.', ready: 'Items already made, counted in servings. Make ahead adds to this; pre-made orders take from it.',
+        buy: 'What to buy for the next few days, worked out from recent daily use and reorder levels.', ledger: 'Every raw stock movement with the balance after it. Tap a row for details.'},
+      analytics: {sales: 'Sales, orders and margins over time, by hour, weekday, channel and payment.', menu: 'How each menu item sells and earns: stars, workhorses, puzzles and dogs.', baskets: 'Which items are bought together.',
+        inventory: 'Ingredient use, restock spend, waste and stock value.', staff: 'Attendance, hours and overtime per person.', payroll: 'Finalized payroll and labor cost against sales.', forecast: 'Expected sales, orders and ingredient use for the coming days.',
+        whatif: 'Try price, cost or demand changes and see the effect on monthly profit.', alerts: 'Unusual things the app noticed: drops in sales, high waste, repeated lateness and more.', report: 'A one-page summary of a month, ready to print or save as PDF.'},
+      cashflow: {summary: 'Cash in and out for the period, and the profit after ingredients, waste, labor and expenses.', expenses: 'Each expense and income entry. Void mistakes instead of deleting.', recurring: 'Fixed monthly costs like rent. The app offers to add them when they’re due.'},
+      staff: {attendance: 'The daily sheet and a summary for any period.', employees: 'Your team and their pay terms. Every pay change is kept as a version.', leaves: 'Filed leaves, paid or unpaid. They show on the attendance sheet and in payroll.',
+        adjustments: 'Bonuses, allowances, manual overtime or undertime, cash advances and deductions. Open ones go into the next payroll.', payroll: 'Payroll runs: calculate a draft, review payslips, then finalize to lock it.'},
+      att: {sheet: 'Mark each person’s status and clock times for one day.', summary: 'Present, late, absent, hours and overtime for any period, plus a calendar.'}},
+    cartAdd: 'Add one to the order. It starts with this item’s default prep type.', cartInc: 'One more of this line.', cartDec: 'One less of this line. At zero it’s removed.', cartClear: 'Empty the current order.',
+    cartPrep: 'À la minute: made now, so ingredients come out of raw stock. Pre-made: taken from ready-to-serve stock.', cartSplit: 'Move one of these to the other prep type, so the same item can be some of each.',
+    checkout: 'Save the order. Stock is updated: raw for à la minute lines, ready-to-serve for pre-made lines.', posNow: 'Set the order time back to now.', posCat: 'Show only this category.',
+    restock: 'Record a delivery. Enter what you paid and the cost per unit is worked out.', adjust: 'Fix raw stock after a count, record waste, or add or remove an amount.', addIngredient: 'Add something you stock, with the unit you count it in.',
+    editIngredient: 'Change the name, unit, category, reorder level or cost. Changes are kept as versions.', wasteItems: 'Write off spilled, dropped or spoiled menu items. Fresh ones use their recipe; ready-to-serve ones come off that stock.',
+    makeAhead: 'Record items you’ve already made. They go into ready-to-serve stock and their ingredients come out of raw stock.', readyAdjust: 'Count, waste or correct ready-to-serve stock. Doesn’t touch raw stock.',
+    importIng: 'Add or update many ingredients at once from a CSV file.', importRec: 'Add or update many recipes at once from a CSV file.', ledgerFor: 'See every stock movement for this ingredient.', ingVersions: 'See every version of this ingredient.',
+    moveView: 'Open this stock movement to see what caused it.', toBuy: 'Fill the purchase list from these amounts.', printBuy: 'Print the purchase list.',
+    bulkRestock: 'Restock all selected ingredients at once.', bulkCount: 'Enter counts for all selected ingredients at once.', bulkReorder: 'Set reorder levels for the selected ingredients.', bulkArchiveIng: 'Archive the selected ingredients. Their history stays.',
+    editRecipe: 'Add or edit a menu item. Changing ingredients or price saves a new version; old orders keep theirs.', versions: 'Every past version of this recipe, and how many were sold.', bulkPrice: 'Change prices for the selected items together.',
+    wasteSel: 'Record the selected items as wasted.', bulkArchiveRec: 'Archive or restore the selected items.',
+    orderView: 'Open this order: items, prep types, the recipe used and the stock it moved.', voidOrder: 'Cancel this order. It stays listed as voided and its stock is returned.', bulkVoid: 'Void the selected orders.',
+    addEmployee: 'Add a team member with their pay terms.', editEmployee: 'Change name, role, start date, leave credits or notes. Pay is changed with Change pay terms.', changeRate: 'Save new pay terms from a date. Older days keep the old ones.',
+    empView: 'Details, every pay version, recent payslips, leaves and adjustments.', addLeave: 'File a paid or unpaid leave.', cancelLeave: 'Cancel this leave. It stays in history.',
+    addAdj: 'Add a bonus, allowance, manual overtime or undertime, cash advance or deduction.', bulkAdj: 'Add the same adjustment for the selected people.', cancelAdj: 'Cancel this adjustment before it’s paid.',
+    clock: 'Record the time now as clocked in or out (uses the database clock).', attDay: 'Go to the previous or next day.', attToday: 'Jump to today.', markAll: 'Mark everyone not yet marked as present.', fillAttendance: 'Fill the same status and times for several people and days.',
+    attSaveAll: 'Save every change on this day.', attResetAll: 'Undo unsaved changes on this day.', attRowSave: 'Save this person’s changes.', attRowReset: 'Undo this person’s unsaved changes.', attRestore: 'Put back the times recorded by Clock in and Clock out.',
+    newRun: 'Calculate a draft payroll for a period. Nothing is locked until you finalize.', openRun: 'Open this payroll run.', recalcRun: 'Recalculate this draft with the latest attendance, leaves and adjustments.',
+    finalizeRun: 'Lock this payroll. Adjustments in it are marked as paid.', voidRun: 'Void this finalized run so it can be redone. Its adjustments reopen.', deleteRun: 'Delete this draft run.',
+    payslip: 'Open the payslip: gross pay calculation, adjustments, and every day of the period.', printSlip: 'Print this payslip.', printRun: 'Print every payslip in this run.', changePw: 'Change your own password.',
+    addExpense: 'Record an expense or money in.', editRecurring: 'Add or edit a fixed monthly cost.', postRecurring: 'Add this month’s recurring cost as an expense.', voidExp: 'Void this entry with a reason. It stays in History.', expView: 'Open this entry.',
+    csv: 'Download what’s shown as a CSV file for Excel or Google Sheets.', exportXlsx: 'Download everything as one Excel file, one sheet per kind of record.', exportDb: 'Download a full backup you can restore later.',
+    printReport: 'Print the monthly report or save it as PDF.', guide: 'How this page works, step by step.', tour: 'A guided tour of the app.', themeCycle: 'Switch between light and dark.', sideToggle: 'Collapse or expand the sidebar.',
+    cloudSyncNow: 'Check the connection and get the latest changes now.', cloudLogout: 'Log out of this device.', switchDs: 'Switch between the live shop and the practice sample data.', resetSample: 'Replace the sample data with a fresh set.',
+    pg: 'Previous or next page.', selClear: 'Clear the selection.', checkAll: 'Tick everyone.', addLine: 'Add another ingredient line.', addWasteLine: 'Add another item.', addMakeLine: 'Add another item.', rmLine: 'Remove this line.',
+    goAlerts: 'See all alerts.', goAtt: 'Open attendance.', goPayroll: 'Open payroll.', rolesGuide: 'What each role can see and do.', teamPage: 'Manage who can log in and their roles.',
+    logoutAll: 'Log everyone out on every device except this one.', memberLogout: 'Log this person out on every device.', memberSetPw: 'Set a new password for this person.', editMember: 'Change name, role, employee link and whether they can log in.',
+    replaceLive: 'Replace all live data with a backup file.', clearLive: 'Delete all live data. Logins and roles stay.'},
+  field: {
+    name: 'The name shown everywhere in the app.', unit: 'What you count it in: g, ml, pcs… Recipes and stock use this unit.', category: 'Optional grouping, used for filters and reports.',
+    reorder_level: 'When stock falls to this, it shows as low on Overview and in Inventory.', unit_cost: 'What one unit costs. Restocks update it.', opening: 'How much you have right now. Recorded as opening stock.',
+    qty: 'How much, in the unit shown.', cost: 'Optional. Total paid for the delivery, or the cost per unit; switch with the buttons above.', supplier: 'Optional, saved with the delivery.', ingredient_id: 'Which ingredient.',
+    price: 'The selling price. Changing it saves a new recipe version.', prep_default: 'À la minute: made when ordered (ingredients out of raw stock). Pre-made: sold from ready-to-serve stock. Each order line can be switched.',
+    'qty[]': 'How much of this ingredient one serving uses, in its unit.', 'ing[]': 'An ingredient from Inventory.',
+    daily: 'Paid for each day worked, before overtime and undertime.', reg: 'Hours a day that count as a full day. More is overtime; fewer is undertime.', brk: 'Unpaid break each day, taken out of clocked hours.',
+    ot: 'Added for each hour worked over the regular hours.', ut: 'Taken off for each hour short of the regular hours.', leave_credits: 'Paid leave days a year.', start_date: 'First day of work. Also when the first pay terms start.',
+    effective_date: 'Days from this date use the new pay terms; earlier days keep the old ones.', kind: 'What kind of adjustment. Earnings add to pay; deductions take from it.',
+    amount: 'Amount in pesos.', hours: 'For manual overtime or undertime: priced at each person’s rate on that date.', days: 'Days of leave. Use 0.5 for a half day.', paid: 'Paid leave uses leave credits and is paid in payroll.',
+    s: 'First day of the payroll period.', e: 'Last day of the payroll period.', reason: 'Saved in History so the change can be explained later.', note: 'Optional, saved with the record.',
+    mode: 'Counted amount sets stock to what you counted. Waste removes and writes off. Add or remove changes by an amount.', 'mq[]': 'Servings you made.', 'mp[]': 'The menu item you made ahead.',
+    'wp[]': 'The menu item that was wasted.', 'wq[]': 'How many were wasted.', 'wprep[]': 'Made fresh: its ingredients come off raw stock. Ready-to-serve: it comes off that stock.',
+    when: 'When it happened.', tin: 'Clock-in time.', tout: 'Clock-out time.', status: 'Present, late, half day, absent or rest day.', description: 'Optional details, like “October rent”.',
+    payment: 'How it was paid or received.', repeat: 'Also add it to Recurring so it’s offered every month.', day: 'Day of the month it’s due (1 to 28).', business: 'Your shop name, shown on receipts, reports and payslips.',
+    channels: 'Where orders come from, separated by commas.', payments: 'Payment methods, separated by commas.', confirm: 'Type the word shown to confirm.'},
+  f: {'pos.disc': 'Amount off the whole order, in pesos.', 'pos.channel': 'Where the order came from.', 'pos.pay': 'How the customer paid.', 'pos.when': 'When the order happened. Change it to record an earlier order; stock is dated the same.',
+    'pos.note': 'Optional: GrabFood order ID, customer, event…', 'att.date': 'The day shown on the sheet.'},
+  text: {
+    'On hand': 'What the app has now: the total of every movement in the ledger.', 'Status': 'OK, low (at or below the reorder level) or out.', 'Last cost': 'Cost per unit from the latest restock or edit.',
+    'Value': 'On hand × cost.', 'Version': 'Each change is kept as a version. Tap to see them all.', 'Ready on hand': 'Servings made ahead and not sold yet. Below zero means more were sold as pre-made than recorded as made.',
+    'Default prep': 'What new order lines for this item start as.', 'Prep': 'À la minute (made when ordered) or Pre-made (from ready-to-serve stock).', 'Cost each': 'What one serving cost to make, averaged over what’s on hand.',
+    'Price': 'Selling price.', 'Cost now': 'Ingredient cost per serving at today’s ingredient costs.', 'Margin': 'Share of the price left after ingredient cost.', 'Per serving': 'Ingredients one serving uses.',
+    'Break': 'Unpaid break from this person’s pay terms.', 'Worked': 'Clocked hours minus the unpaid break.', 'OT / UT': 'Overtime or undertime against this person’s regular hours.',
+    'Days': 'Days worked in the period (half days count as 0.5).', 'OT hrs': 'Overtime hours.', 'UT hrs': 'Undertime hours.', 'Base': 'Daily rate × days worked.', 'OT pay': 'Overtime hours × overtime rate.',
+    'Undertime': 'Undertime hours × undertime rate, taken off.', 'Leave pay': 'Paid leave days × daily rate.', 'Adjustments': 'Bonuses, allowances and deductions added after gross pay.', 'Net pay': 'Gross pay plus adjustments.',
+    'Clocked hrs': 'Clock out minus clock in.', 'Break hrs': 'Unpaid break taken out.', 'Worked hrs': 'Clocked hours minus break.', 'Required hrs': 'Regular hours from the pay terms.',
+    'Overtime hrs': 'Worked hours over the required hours.', 'Undertime hrs': 'Worked hours short of the required hours.', 'Daily rate': 'Pay for the day before overtime and undertime.', 'Day pay': 'Daily rate + overtime pay − undertime deduction.',
+    'Pay terms': 'Which pay terms version this day used.', 'Sales': 'Total of completed orders after discounts.', 'Orders': 'Completed orders.', 'Average order': 'Sales ÷ orders.',
+    'Gross margin': 'Share of sales left after the cost of what was sold.', 'Labor (estimate)': 'Pay worked out from attendance and pay terms, before adjustments.', 'Ingredients used': 'Ingredient cost of orders and making ahead.',
+    'Restock spend': 'What deliveries cost.', 'Waste': 'Cost of what was written off, raw and ready-to-serve.', 'Count differences': 'Net change from stock counts and manual changes.', 'Stock value now': 'Raw stock on hand × cost.',
+    'Total net pay': 'Sum of every payslip in this run.', 'Base pay': 'Daily rate × days worked.', 'Overtime': 'Overtime pay in this run.'}
+};
+// the tooltip has to sit inside an open popup to show above it
+const tipEl = () => $('#tip') || document.body.appendChild(Object.assign(document.createElement('div'), {id: 'tip', role: 'tooltip'}));   // recreated if a popup redraw removed it
+function tipHost(t) { const d = [...document.querySelectorAll('dialog[open]')].pop() || document.body; if (t.parentElement !== d) d.appendChild(t); }
+function guidedOn() { return PREF.get('guided', 'on') === 'on'; }
+function gtFor(el) {
+  const a = el.dataset.act;
+  if (a) { const t = GT.act[a]; if (a === 'go') return (t || {})[el.dataset.v]; if (a === 'tab') return ((t || {})[el.dataset.g] || {})[el.dataset.v]; if (typeof t === 'string') return t; }
+  return '';
+}
+function annotateGuide() {
+  if (!guidedOn()) return;
+  $$('[data-act]:not([data-gt]):not([data-tip])').forEach(el => { const t = gtFor(el); el.dataset.gt = t || ''; });
+  $$('dialog[open] form [name], .card form [name], #setForm [name]').forEach(el => { const t = GT.field[el.name]; const host = el.closest('label.f') || el.closest('.f') || el; if (t && !host.dataset.gt && !host.dataset.tip) host.dataset.gt = t; });
+  $$('[data-f]:not([data-gt])').forEach(el => { const t = GT.f[el.dataset.f]; const host = el.closest('label') || el; if (t && !host.dataset.gt) host.dataset.gt = t; else el.dataset.gt = ''; });
+  $$('th:not([data-gt]), .tile .k:not([data-gt]), dl.kv dt:not([data-gt])').forEach(el => { const txt = (el.firstChild && el.firstChild.nodeType === 3 ? el.firstChild.textContent : el.textContent).trim(); el.dataset.gt = GT.text[txt] || ''; });
+}
+let gtQueued = false;
+new MutationObserver(() => { window.hideGuideTip && window.hideGuideTip(); if (gtQueued || !guidedOn()) return; gtQueued = true; requestAnimationFrame(() => { gtQueued = false; annotateGuide(); }); }).observe(document.documentElement, {childList: true, subtree: true});
+(() => {
+  const tip = tipEl; let timer = null, cur = null, pressed = false, swallow = false;
+  const place = (el, x, y, txt) => { const t = tip(); tipHost(t); t.textContent = txt; t.classList.add('on', 'gt'); const w = t.offsetWidth, h = t.offsetHeight; t.style.left = Math.min(innerWidth - w - 8, Math.max(8, x - w / 2)) + 'px'; t.style.top = (y - h - 14 < 8 ? y + 22 : y - h - 14) + 'px'; cur = el; };
+  const hide = () => { clearTimeout(timer); if (cur) { tip().classList.remove('on', 'gt'); cur = null; } };
+  window.hideGuideTip = () => { if (cur && !cur.isConnected) hide(); };
+  const target = e => { if (!guidedOn()) return null; const el = e.target.closest && e.target.closest('[data-gt]'); return el && el.dataset.gt && !e.target.closest('[data-tip]') ? el : null; };
+  document.addEventListener('mousemove', e => {
+    if (pressed) return; const el = target(e);
+    if (!el) { if (cur || timer) hide(); return; }
+    if (el === cur) return; clearTimeout(timer); if (cur) { tip().classList.remove('on', 'gt'); cur = null; }
+    const x = e.clientX, y = e.clientY; timer = setTimeout(() => place(el, x, y, el.dataset.gt), 550);
+  });
+  ['mousedown', 'keydown', 'wheel'].forEach(t => document.addEventListener(t, hide, {passive: true}));
+  addEventListener('scroll', hide, {passive: true});
+  // touch: press and hold shows the tip, and that press doesn't also tap the button
+  document.addEventListener('touchstart', e => { const el = target(e); if (!el) return; pressed = true; const t = e.touches[0], x = t.clientX, y = t.clientY; clearTimeout(timer); timer = setTimeout(() => { place(el, x, y, el.dataset.gt); swallow = true; if (navigator.vibrate) navigator.vibrate(10); }, 500); }, {passive: true});
+  document.addEventListener('touchmove', () => { clearTimeout(timer); }, {passive: true});
+  document.addEventListener('touchend', () => { pressed = false; clearTimeout(timer); if (cur) setTimeout(hide, 2600); }, {passive: true});
+  document.addEventListener('click', e => { if (swallow) { swallow = false; e.preventDefault(); e.stopPropagation(); } }, true);
+  document.addEventListener('contextmenu', e => { if (cur || pressed) e.preventDefault(); });
+})();
 /* chart tooltips: hover on desktop, tap on touch */
 (() => {
-  const tip = $('#tip'); let cur = null;
-  const show = (el, x, y) => { tip.textContent = el.dataset.tip; tip.classList.add('on'); const w = tip.offsetWidth, h = tip.offsetHeight; tip.style.left = Math.min(innerWidth - w - 8, Math.max(8, x - w / 2)) + 'px'; tip.style.top = Math.max(8, y - h - 12) + 'px'; cur = el; };
-  const hide = () => { tip.classList.remove('on'); cur = null; };
+  let cur = null; const T = tipEl;
+  const show = (el, x, y) => { const tip = T(); tipHost(tip); tip.textContent = el.dataset.tip; tip.classList.add('on'); const w = tip.offsetWidth, h = tip.offsetHeight; tip.style.left = Math.min(innerWidth - w - 8, Math.max(8, x - w / 2)) + 'px'; tip.style.top = Math.max(8, y - h - 12) + 'px'; cur = el; };
+  const hide = () => { T().classList.remove('on'); cur = null; };
   document.addEventListener('mousemove', e => { const el = e.target.closest('[data-tip]'); if (el) show(el, e.clientX, e.clientY); else if (cur) hide(); });
   document.addEventListener('touchstart', e => { const el = e.target.closest('[data-tip]'); if (el) { const t = e.touches[0]; show(el, t.clientX, t.clientY); } else hide(); }, {passive: true});
   addEventListener('scroll', hide, {passive: true});
