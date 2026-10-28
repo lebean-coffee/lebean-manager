@@ -347,6 +347,10 @@ dialog::backdrop{background:rgba(20,12,4,.5)}
 .lines{display:flex;flex-direction:column;gap:8px}
 .lrow{display:grid;grid-template-columns:minmax(0,1fr) 96px 54px 34px;gap:8px;align-items:center}
 .lrow .u{font-size:13px;color:var(--muted)}
+.lrow.wrow{grid-template-columns:minmax(0,1fr) 72px minmax(120px,170px) 34px}
+.lrow.mrow{grid-template-columns:minmax(0,1fr) 90px 64px 34px}
+.bar-row label{min-width:0;max-width:100%}
+.bar-row select{max-width:100%;min-width:0;text-overflow:ellipsis}
 .guide ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px}
 .guide li::marker{font-weight:700;color:var(--link)}
 .guide .tipbox{background:var(--sunk);border-radius:10px;padding:12px 14px;font-size:14px}
@@ -651,6 +655,10 @@ body:not(.fx) .tabs .ind{transition:none}
   .card{padding:16px}
   .g3,.g4{grid-template-columns:repeat(2,minmax(0,1fr))}
   .lrow{grid-template-columns:minmax(0,1fr) 78px 40px 32px}
+  .lrow.wrow{grid-template-columns:64px minmax(0,1fr) 30px;row-gap:6px;padding-bottom:6px;border-bottom:1px dashed var(--line)}
+  .lrow.wrow > select:first-child{grid-column:1 / -1}
+  .lrow.mrow{grid-template-columns:minmax(0,1fr) 64px 56px 30px}
+  .lrow.mrow .u{font-size:11.5px}
   table.rt tr{position:relative}
   table.rt td.sel,body.fx table.rt tr.click td.sel{position:absolute!important;right:14px;top:12px;min-height:0;padding:0;background:none!important}
   body.fx table.rt tr.click td.sel::before{display:none}
@@ -1222,6 +1230,7 @@ const otherPrep = k => k === 'premade' ? 'alaminute' : 'premade';
 const READY_MOVE = {made: 'Made ahead', order: 'Order', order_void: 'Order voided', waste: 'Waste', count: 'Stock count', adjustment: 'Adjustment', balance: 'On hand'};
 // ready-to-serve on hand per item, and its value at the cost it was made for (moving average)
 const readyMap = memo(() => { const m = {}; q('SELECT product_id p, SUM(qty) s, SUM(qty*COALESCE(unit_cost,0)) v FROM ready_moves GROUP BY product_id').forEach(r => m[r.p] = {qty: round(r.s, 4), value: r.v || 0}); return m; });
+const readyLow = memo(() => products().filter(p => prepOf(p) === 'premade' && readyQty(p.id) <= 0).map(p => ({...p, ready: readyQty(p.id)})));
 const readyWaste = (f, e) => -(val(`SELECT COALESCE(SUM(qty*COALESCE(unit_cost,0)),0) FROM ready_moves WHERE type='waste' AND substr(ts,1,10) BETWEEN ? AND ?`, [f, e]) || 0);
 const readyQty = pid => (readyMap()[pid] || {}).qty || 0;
 function readyCost(pid, prod) {
@@ -1391,7 +1400,7 @@ function renderShell() {
 }
 function render() { if (VIEW_PERM[S.view] && !can(VIEW_PERM[S.view])) S.view = 'overview'; renderNav(); renderFile(); renderView(); }
 function navBadge(k) {
-  if (k === 'inventory') { const n = lowStock().length; return n ? `<span class="badge" title="${n} low on stock">${n}</span>` : ''; }
+  if (k === 'inventory') { const n = lowStock().length + readyLow().length; return n ? `<span class="badge" title="${n} low on stock or with nothing ready">${n}</span>` : ''; }
   if (k === 'pos') { const n = S.cart.reduce((s, c) => s + c.qty, 0); return n ? `<span class="badge soft">${n}</span>` : ''; }
   return '';
 }
@@ -1400,7 +1409,7 @@ function renderNav() {
   $('#nav').innerHTML = navItems().map(([k, t, i]) => `${GRP[k] && GRP[k] !== last ? `<div class="grp">${(last = GRP[k])}</div>` : ''}<button data-act="go" data-v="${k}" title="${t}" class="${S.view === k ? 'on' : ''}"${S.view === k ? ' aria-current="page"' : ''}>${ic(i)}<span class="lbl">${t}</span>${navBadge(k)}</button>`).join('');
   const inMore = !MOBILE_NAV.includes(S.view);
   $('#bnav').innerHTML = MOBILE_NAV.map(k => { const [, t, i] = NAV.find(n => n[0] === k); return `<button data-act="go" data-v="${k}" class="${S.view === k ? 'on' : ''}">${ic(i)}<span>${k === 'staff' ? 'Staff' : t}</span>${navBadge(k)}</button>`; }).join('')
-    + `<button data-act="more" class="${inMore ? 'on' : ''}">${ic('more')}<span>More</span>${lowStock().length ? '<span class="badge"> </span>' : ''}</button>`;
+    + `<button data-act="more" class="${inMore ? 'on' : ''}">${ic('more')}<span>More</span>${lowStock().length + readyLow().length ? '<span class="badge"> </span>' : ''}</button>`;
   const cart = S.cart.reduce((s, c) => s + c.qty, 0), cb = $('#cartbar');
   if (S.view === 'pos' && cart) { const pm = Object.fromEntries(products().map(p => [p.id, p])); const tot = S.cart.reduce((s, c) => s + (pm[c.pid] ? pm[c.pid].price * c.qty : 0), 0); cb.hidden = false; cb.innerHTML = `<span>${cart} item${cart === 1 ? '' : 's'} · Review order</span><span>${peso(tot)}</span>`; }
   else cb.hidden = true;
@@ -1622,6 +1631,7 @@ VIEWS.overview = () => {
     </div>
     <div class="stack">
       ${(() => { const al = can('money') ? detectAlerts(addDays(today(), -13), today()) : []; return al.length ? `<div class="card"><h3>Alerts, last 14 days ${chip(al.length, al.some(a => a.sev === 'high') ? 'bad' : 'warn')}<span class="actions"><button class="btn sm ghost" data-act="goAlerts">See all</button></span></h3>${alertsList(al.slice(0, 4))}</div>` : ''; })()}
+      ${(() => { const rl = readyLow(); return rl.length ? `<div class="card"><h3>Pre-made, nothing ready ${chip(rl.length, rl.some(p => p.ready < 0) ? 'bad' : 'warn')}</h3><ul class="list">${rl.slice(0, 6).map(p => `<li><span><span class="b">${esc(p.name)}</span><br><span class="small ${p.ready < 0 ? 'minus' : 'muted'}">${p.ready < 0 ? `${fq(p.ready)} ready (below zero)` : 'None ready'}</span></span><button class="btn sm" data-act="makeAhead" data-id="${p.id}">Make ahead</button></li>`).join('')}</ul></div>` : ''; })()}
       <div class="card"><h3>Running low ${low.length ? chip(low.length, 'bad') : ''}</h3>
         ${low.length ? `<ul class="list">${low.slice(0, 8).map(i => `<li><span><span class="b">${esc(i.name)}</span><br><span class="small ${i.onhand <= 0 ? 'minus' : 'muted'}">${fq(i.onhand)} ${esc(i.unit)} left, reorder at ${fq(i.reorder_level)}</span></span><button class="btn sm" data-act="restock" data-id="${i.id}">Restock</button></li>`).join('')}</ul>${low.length > 8 ? `<button class="btn sm ghost" data-act="go" data-v="inventory">See all ${low.length}</button>` : ''}` : '<p class="muted" style="margin:0">Everything is above its reorder level.</p>'}</div>
       <div class="card"><h3>${can('attAll') ? 'Staff in this period' : 'My attendance'} <span class="actions"><button class="btn sm ghost" data-act="goAtt">Attendance</button></span></h3>
@@ -6173,12 +6183,13 @@ const GT = {
   f: {'pos.disc': 'Amount off the whole order, in pesos.', 'pos.channel': 'Where the order came from.', 'pos.pay': 'How the customer paid.', 'pos.when': 'When the order happened. Change it to record an earlier order; stock is dated the same.',
     'pos.note': 'Optional: GrabFood order ID, customer, event…', 'att.date': 'The day shown on the sheet.'},
   text: {
-    'On hand': 'What the app has now: the total of every movement in the ledger.', 'Status': 'OK, low (at or below the reorder level) or out.', 'Last cost': 'Cost per unit from the latest restock or edit.',
+    'inventory:On hand': 'What the app has now: the total of every movement in the ledger.', 'inventory:Status': 'OK, low (at or below the reorder level), out, or for ready-to-serve: ready, none ready or negative.', 'Last cost': 'Cost per unit from the latest restock or edit.',
+    'orders:Status': 'Completed, or voided (kept in the list; its stock was returned).', 'staff:Status': 'Present, late, half day, absent or rest day.', 'cashflow:Status': 'Active, or voided (kept for the record).',
     'Value': 'On hand × cost.', 'Version': 'Each change is kept as a version. Tap to see them all.', 'Ready on hand': 'Servings made ahead and not sold yet. Below zero means more were sold as pre-made than recorded as made.',
     'Default prep': 'What new order lines for this item start as.', 'Prep': 'À la minute (made when ordered) or Pre-made (from ready-to-serve stock).', 'Cost each': 'What one serving cost to make, averaged over what’s on hand.',
     'Price': 'Selling price.', 'Cost now': 'Ingredient cost per serving at today’s ingredient costs.', 'Margin': 'Share of the price left after ingredient cost.', 'Per serving': 'Ingredients one serving uses.',
     'Break': 'Unpaid break from this person’s pay terms.', 'Worked': 'Clocked hours minus the unpaid break.', 'OT / UT': 'Overtime or undertime against this person’s regular hours.',
-    'Days': 'Days worked in the period (half days count as 0.5).', 'OT hrs': 'Overtime hours.', 'UT hrs': 'Undertime hours.', 'Base': 'Daily rate × days worked.', 'OT pay': 'Overtime hours × overtime rate.',
+    'staff:Days': 'Days worked in the period (half days count as 0.5).', 'OT hrs': 'Overtime hours.', 'UT hrs': 'Undertime hours.', 'Base': 'Daily rate × days worked.', 'OT pay': 'Overtime hours × overtime rate.',
     'Undertime': 'Undertime hours × undertime rate, taken off.', 'Leave pay': 'Paid leave days × daily rate.', 'Adjustments': 'Bonuses, allowances and deductions added after gross pay.', 'Net pay': 'Gross pay plus adjustments.',
     'Clocked hrs': 'Clock out minus clock in.', 'Break hrs': 'Unpaid break taken out.', 'Worked hrs': 'Clocked hours minus break.', 'Required hrs': 'Regular hours from the pay terms.',
     'Overtime hrs': 'Worked hours over the required hours.', 'Undertime hrs': 'Worked hours short of the required hours.', 'Daily rate': 'Pay for the day before overtime and undertime.', 'Day pay': 'Daily rate + overtime pay − undertime deduction.',
@@ -6201,7 +6212,7 @@ function annotateGuide() {
   $$('[data-act]:not([data-gt]):not([data-tip])').forEach(el => { const t = gtFor(el); el.dataset.gt = t || ''; });
   $$('dialog[open] form [name], .card form [name], #setForm [name]').forEach(el => { const t = GT.field[el.name]; const host = el.closest('label.f') || el.closest('.f') || el; if (t && !host.dataset.gt && !host.dataset.tip) host.dataset.gt = t; });
   $$('[data-f]:not([data-gt])').forEach(el => { const t = GT.f[el.dataset.f]; const host = el.closest('label') || el; if (t && !host.dataset.gt) host.dataset.gt = t; else el.dataset.gt = ''; });
-  $$('th:not([data-gt]), .tile .k:not([data-gt]), dl.kv dt:not([data-gt])').forEach(el => { const txt = (el.firstChild && el.firstChild.nodeType === 3 ? el.firstChild.textContent : el.textContent).trim(); el.dataset.gt = GT.text[txt] || ''; });
+  $$('th:not([data-gt]), .tile .k:not([data-gt]), dl.kv dt:not([data-gt])').forEach(el => { const txt = (el.firstChild && el.firstChild.nodeType === 3 ? el.firstChild.textContent : el.textContent).trim(); el.dataset.gt = GT.text[S.view + ':' + txt] || GT.text[txt] || ''; });
 }
 let gtQueued = false;
 new MutationObserver(() => { window.hideGuideTip && window.hideGuideTip(); if (gtQueued || !guidedOn()) return; gtQueued = true; requestAnimationFrame(() => { gtQueued = false; annotateGuide(); }); }).observe(document.documentElement, {childList: true, subtree: true});
