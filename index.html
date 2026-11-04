@@ -274,6 +274,7 @@ body.guided label.f[data-gt]:not([data-gt=""]) > :is(span:first-child){text-deco
 .item.in{border-color:var(--accent-ink);box-shadow:inset 0 0 0 1px var(--accent-ink)}
 .item .n{font-weight:600;line-height:1.3;padding-right:26px}
 .item .p{font-weight:700;font-size:17px;margin-top:auto}
+.item .ipreps + *{display:none}
 .item .c{font-size:12.5px;color:var(--muted)}
 .item .c.bad{color:var(--bad);font-weight:600}
 .item .q{position:absolute;top:10px;right:10px;background:var(--primary-bg);color:var(--primary-ink);border-radius:99px;font-size:12px;font-weight:700;min-width:22px;text-align:center;line-height:22px;padding:0 6px}
@@ -283,11 +284,20 @@ body.guided label.f[data-gt]:not([data-gt=""]) > :is(span:first-child){text-deco
 .rhead{text-align:center;border-bottom:1px dashed var(--dash);padding-bottom:12px;margin-bottom:8px}
 .rhead img{width:130px;margin:0 auto 6px}
 .rline{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:5px 0}
+.remind{display:flex;gap:6px;align-items:flex-start}
+.remind svg{flex:0 0 auto;width:15px;height:15px;margin-top:2px;color:var(--info)}
+.note.remind.invwhere{margin:0 0 12px;font-size:13px}
+.note.remind.invwhere a{font-weight:600}
 .prepsw{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px;font-family:var(--sans)}
 .prepsw button{font-size:11px;padding:2px 7px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);cursor:pointer}
 .prepsw button.on{background:var(--accent-ink,#3B2507);border-color:var(--accent-ink,#3B2507);color:#fff}
 .prepsw button.lnk{border-style:dashed}
-.item .pmk{font-size:9.5px;font-weight:700;padding:0 4px;border-radius:4px;background:var(--info-bg);color:var(--info);vertical-align:2px}
+.item .ipreps{display:flex;gap:6px;margin-top:8px}
+.item .ipreps button{flex:1;min-width:0;font:inherit;font-size:12px;font-weight:600;padding:6px 4px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--ink-2);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .ipreps button:hover{border-color:var(--line-strong);background:var(--sunk)}
+.item .ipreps button.def{background:var(--accent-ink,#3B2507);border-color:var(--accent-ink,#3B2507);color:#fff}
+:root[data-theme=dark] .item .ipreps button.def{background:var(--butter,#F3EDB5);border-color:var(--butter,#F3EDB5);color:#3B2507}
+.item .ipreps button:focus-visible{outline:2px solid var(--c2);outline-offset:1px}
 .item .c .bad{color:var(--bad)}
 .qty{display:flex;align-items:center;gap:2px}
 .qty button{all:unset;cursor:pointer;width:24px;height:24px;text-align:center;border:1px solid var(--dash);border-radius:6px;line-height:22px}
@@ -884,6 +894,17 @@ select:not([multiple]){-webkit-appearance:none;appearance:none;cursor:pointer;pa
 :root[data-theme=dark] select:not([multiple]){background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='%23A8977F' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
 select:not([multiple]):hover{border-color:var(--line-strong)}
 select:disabled{cursor:not-allowed;opacity:.7}
+.ssbox{position:fixed;z-index:400;background:var(--surface);color:var(--ink);border:1px solid var(--line-strong,var(--line));border-radius:12px;box-shadow:0 16px 40px -12px rgba(0,0,0,.35);padding:6px;font-size:14px;font-family:var(--sans)}
+.ssbox .ssq{width:100%;box-sizing:border-box;margin:0 0 6px;padding:8px 10px;font-size:14px}
+.ssbox .ssl{overflow-y:auto;overscroll-behavior:contain}
+.ssbox .sso{padding:8px 10px;border-radius:8px;cursor:pointer;line-height:1.3;overflow-wrap:anywhere}
+.ssbox .sso.hi{background:var(--sunk)}
+.ssbox .sso.cur{font-weight:700}
+.ssbox .sso.cur::after{content:' ✓';color:var(--good)}
+.ssbox .sso.dis{opacity:.45;cursor:default}
+.ssbox .ssg{padding:8px 10px 3px;font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.ssbox .ssn{padding:10px;color:var(--muted)}
+[data-style=sharp] .ssbox,[data-style=sharp] .ssbox .sso{border-radius:3px}
 select option{background:var(--surface);color:var(--ink)}
 </style>
 </head>
@@ -993,6 +1014,7 @@ const isPhone = () => matchMedia('(max-width:860px)').matches;
 
 /* icons: simple 24px line glyphs */
 const IC = {
+  info: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 11v6M12 7.5v.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
   home: '<path d="M4 11.5 12 5l8 6.5"/><path d="M6 10v9h12v-9"/>',
   cup: '<path d="M6 8h11l-1.2 11.2a1.5 1.5 0 0 1-1.5 1.3H8.7a1.5 1.5 0 0 1-1.5-1.3z"/><path d="M5 8h13"/><path d="M9 4.5c0 1 1 1 1 2M12.5 4.5c0 1 1 1 1 2"/>',
   receipt: '<path d="M6 3.5h12v17l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3-2 1.3z"/><path d="M9 8h6M9 11.5h6M9 15h4"/>',
@@ -1222,9 +1244,9 @@ async function fileMatches(h) {
 }
 /* ---------- domain ---------- */
 const MOVE = {opening: 'Opening stock', restock: 'Restock', order: 'Order', order_void: 'Order voided', prep: 'Made ahead', count: 'Stock count', waste: 'Waste', adjustment: 'Adjustment'};
-/* prep type: à la minute items are made when ordered (ingredients come out then); pre-made items come from ready-to-serve stock,
+/* prep type: made-to-order items are made when ordered (ingredients come out then); pre-made items come from ready-to-serve stock,
    which is filled by making items ahead (ingredients come out when they're made) */
-const PREP = {alaminute: 'À la minute', premade: 'Pre-made'};
+const PREP = {alaminute: 'Made-to-order', premade: 'Pre-made'};
 const prepOf = p => p && p.prep_default === 'premade' ? 'premade' : 'alaminute';
 const otherPrep = k => k === 'premade' ? 'alaminute' : 'premade';
 const READY_MOVE = {made: 'Made ahead', order: 'Order', order_void: 'Order voided', waste: 'Waste', count: 'Stock count', adjustment: 'Adjustment', balance: 'On hand'};
@@ -1486,8 +1508,8 @@ const GUIDES = {
     'Running low lists ingredients at or below their reorder level. Tap Restock to record a delivery.'],
     tips: ['For deeper breakdowns (by channel, top items, waste, overtime) and forecasts, open <b>Analytics</b>.']},
   pos: {t: 'New order', intro: 'Record an order and let the app take the ingredients out of stock.', steps: [
-    'Tap menu items to add them. Use + and − on the receipt to change quantities.',
-    'Each line has a <b>prep type</b>: <b>À la minute</b> (made when ordered: its ingredients come out of raw stock) or <b>Pre-made</b> (taken from ready-to-serve stock). It starts at the item’s default; tap to switch, or “1 as …” to split one off, so 2 orders can be 1 of each.',
+    'Tap an item box to add it with its default prep type (the highlighted button), or tap <b>Pre-made</b> or <b>Made-to-order</b> inside the box to choose. Use + and − on the receipt to change quantities.',
+    'Each line has a <b>prep type</b>: <b>Made-to-order</b> (made when ordered: its ingredients come out of raw stock) or <b>Pre-made</b> (taken from ready-to-serve stock). Switch it on the receipt, or “1 as …” to split one off, so 2 orders can be 1 of each.',
     'Pick the channel (GrabFood, Event…) and how it was paid. Add the GrabFood order ID or customer in Note if useful.',
     'The order time defaults to now. Change <b>Order date &amp; time</b> to record an order from an earlier day; the stock change is dated the same.',
     'Tap <b>Complete order</b>. Each item’s current recipe is used to deduct ingredients, and that recipe is saved with the order.'],
@@ -1507,7 +1529,7 @@ const GUIDES = {
     'The <b>Stock ledger</b> tab lists every movement with the balance after it. Tap a row to see which orders and recipes caused it.'],
     tips: ['Set a reorder level so low items show on Overview and get a red badge in the menu.', 'Changing an ingredient’s unit doesn’t convert amounts, so keep units consistent.']},
   recipes: {t: 'Recipes', intro: 'A recipe is a menu item plus what one serving uses.', steps: [
-    'Add a recipe with its name, category, price and ingredients per serving, and its <b>default prep type</b>: À la minute (made when ordered) or Pre-made (sold from ready-to-serve stock).',
+    'Add a recipe with its name, category, retail (selling) price and the ingredients for <b>one serving</b> (never a whole batch), and its <b>default prep type</b>: Made-to-order (made when ordered) or Pre-made (sold from ready-to-serve stock).',
     'Cost and margin update live from the latest ingredient costs.',
     'Editing ingredients or price saves a <b>new version</b>. Past orders keep the version they used, so old costs stay correct.',
     'Archive items you no longer sell. They leave the menu but their history stays.'],
@@ -1652,7 +1674,7 @@ VIEWS.pos = () => {
   S.cart = S.cart.filter(c => pmap[c.pid]);
   S.cart.forEach(c => { if (!c.prep) c.prep = prepOf(pmap[c.pid]); });
   const inCart = {}; S.cart.forEach(c => inCart[c.pid] = (inCart[c.pid] || 0) + c.qty);
-  // à la minute lines use ingredients now; pre-made lines use ready-to-serve stock
+  // made-to-order lines use ingredients now; pre-made lines use ready-to-serve stock
   const needs = {}, rNeed = {};
   S.cart.forEach(c => { if (c.prep === 'premade') rNeed[c.pid] = (rNeed[c.pid] || 0) + c.qty; else pmap[c.pid].lines.forEach(l => needs[l.ingredient_id] = (needs[l.ingredient_id] || 0) + l.qty * c.qty); });
   const ingMap = ingIndex();
@@ -1663,7 +1685,8 @@ VIEWS.pos = () => {
     const can = p.lines.length ? Math.floor(Math.min(...p.lines.map(l => l.qty > 0 ? Math.max(0, (stock[l.ingredient_id] || 0) - (needs[l.ingredient_id] || 0)) / l.qty : Infinity))) : Infinity;
     const rd = round(readyQty(p.id) - (rNeed[p.id] || 0), 4), pre = prepOf(p) === 'premade', rawTxt = can === Infinity ? (isStaff() ? '' : 'No stock tracked') : can < 1 ? 'Out of raw stock' : `Enough for ${can} more`;
     const txt = pre ? `<span class="${rd < 1 ? 'bad' : ''}">${rd < 0 ? `${fq(rd)} ready` : rd < 1 ? 'None ready' : `${fq(rd)} ready`}</span>${rawTxt ? ` · ${rawTxt.replace('Enough for', 'raw for')}` : ''}` : `<span class="${can < 1 ? 'bad' : ''}">${rawTxt || 'Made when ordered'}</span>${rd ? ` · ${fq(rd)} ready` : ''}`;
-    return `<button class="item ${inCart[p.id] ? 'in' : ''}" data-act="cartAdd" data-id="${p.id}" aria-label="Add ${esc(p.name)}">${inCart[p.id] ? `<span class="q">${inCart[p.id]}</span>` : ''}<span class="n">${esc(p.name)}${pre ? ' <span class="pmk" title="Pre-made by default">PM</span>' : ''}</span><span class="c">${txt}</span><span class="p">${peso(p.price)}</span></button>`;
+    const def = prepOf(p), pb = k => `<button type="button" class="${k === def ? 'def' : ''}" data-act="cartAddPrep" data-id="${p.id}" data-v="${k}" aria-label="Add ${esc(p.name)}, ${PREP[k].toLowerCase()}${k === def ? ' (default)' : ''}">${PREP[k]}</button>`;
+    return `<div class="item ${inCart[p.id] ? 'in' : ''}" role="button" tabindex="0" data-act="cartAdd" data-id="${p.id}" aria-label="Add ${esc(p.name)} (${PREP[def].toLowerCase()})">${inCart[p.id] ? `<span class="q">${inCart[p.id]}</span>` : ''}<span class="n">${esc(p.name)}</span><span class="c">${txt}</span><span class="p">${peso(p.price)}</span><span class="ipreps">${pb('premade')}${pb('alaminute')}</span></div>`;
   }).join('') || '<p class="muted">No items match your search.</p>';
   const when = F('pos.when'), back = when && when.slice(0, 10) !== today();
   return head('New order', '', '', 'pos') + `
@@ -1746,6 +1769,8 @@ async function checkout() {
   render(); window.scrollTo(0, 0);
 }
 
+function cartPut(pid, pr) { const c = S.cart.find(x => x.pid === pid && x.prep === pr); if (c) c.qty++; else S.cart.push({pid, qty: 1, prep: pr}); S.flash = pid; renderView(); renderNav(); }
+
 /* ----- Orders ----- */
 VIEWS.orders = () => {
   const st = settings(), t = today();
@@ -1793,7 +1818,7 @@ function orderView(id) {
       <dt>Status</dt><dd>${o.status === 'voided' ? `${chip('Voided', 'bad')} ${esc(prettyTs(o.voided_at))}: ${esc(o.void_reason)}` : chip('Completed', 'ok')}</dd>${o.note ? `<dt>Note</dt><dd>${esc(o.note)}</dd>` : ''}
       <dt>Subtotal</dt><dd>${peso(o.subtotal)}</dd><dt>Discount</dt><dd>${peso(o.discount)}</dd><dt>Total</dt><dd><b>${peso(o.total)}</b></dd>${can('costs') ? `<dt>Ingredient cost</dt><dd>${peso(o.cost || 0)} (${pct(o.total - (o.cost || 0), o.total)} margin)</dd>` : ''}</dl>
       <h3>${can('recView') ? 'Items and the recipe used' : 'Items'}</h3>
-      ${T([{h: 'Item', main: 1, f: it => `<b>${esc(it.name)}</b>`}, {h: 'Prep', f: it => it.prep === 'premade' ? chip('Pre-made', 'info') : '<span class="small muted">À la minute</span>'}, {h: 'Qty', r: 1, k: 'qty'}, {h: 'Price', r: 1, f: it => peso(it.price)},
+      ${T([{h: 'Item', main: 1, f: it => `<b>${esc(it.name)}</b>`}, {h: 'Prep', f: it => it.prep === 'premade' ? chip('Pre-made', 'info') : '<span class="small muted">Made-to-order</span>'}, {h: 'Qty', r: 1, k: 'qty'}, {h: 'Price', r: 1, f: it => peso(it.price)},
         ...(can('recView') ? [{h: 'Recipe at time of order', f: it => { const r = J(it.recipe) || {}; return `<span class="small">v${r.version}: ${(r.lines || []).map(l => `${fq(l.qty)} ${esc(l.unit)} ${esc(l.name)}`).join(', ') || 'no ingredients'}</span>`; }}] : [])], items)}
       ${can('recView') ? `<h3>Stock movements</h3>
       ${T([{h: 'Ingredient', main: 1, k: 'name'}, {h: 'Type', f: m => esc(MOVE[m.type])}, {h: 'Change', r: 1, f: m => signed(m.qty, m.unit)}, {h: 'Time', f: m => `<span class="small">${esc(prettyTs(m.ts))}</span>`}], moves, {empty: `<p class="muted small">${rmoves.length ? 'No raw stock used: every item came from ready-to-serve stock.' : 'No stock tracked for these items.'}</p>`})}
@@ -1813,6 +1838,7 @@ function voidOrder(id) {
 
 /* ----- Inventory ----- */
 VIEWS.inventory = () => head('Inventory', '', `<button class="btn" data-act="importIng">Import</button><button class="btn" data-act="wasteItems">Record wasted items</button><button class="btn" data-act="makeAhead">Make ahead</button><button class="btn" data-act="addIngredient">${ic('plus')}Add ingredient</button><button class="btn primary" data-act="restock">Restock</button>`, 'inventory')
+  + `<div class="note info remind invwhere"><span>${ic('info')} <b>Checking stock?</b> Raw ingredients (e.g., ube powder): <a href="#" data-act="tab" data-g="inventory" data-v="stock">Raw stock</a> for what’s on hand${can('costs') ? `, <a href="#" data-act="tab" data-g="inventory" data-v="ledger">Stock ledger</a> for every movement` : ''}. Portioned pre-made items (e.g., portions of chili con carne): <a href="#" data-act="tab" data-g="inventory" data-v="ready">Ready-to-serve</a>.</span></div>`
   + (can('costs') ? tabs('inventory', [['stock', 'Raw stock'], ['ready', 'Ready-to-serve'], ['buy', 'Purchase list'], ['ledger', 'Stock ledger']]) + (S.tab.inventory === 'ledger' ? ledgerView() : S.tab.inventory === 'buy' ? buyView() : S.tab.inventory === 'ready' ? readyView() : stockView())
     : tabs('inventory', [['stock', 'Raw stock'], ['ready', 'Ready-to-serve']]) + (S.tab.inventory === 'ready' ? readyView() : stockView()));
 /* ready-to-serve stock: items made ahead, counted in servings. Making them uses their ingredients from raw stock;
@@ -1835,7 +1861,7 @@ function readyView() {
   <div class="bar-row">${search('rdy.q', 'Item or category')}${fSelect('rdy.show', 'Show', [['', 'Pre-made items and anything in stock'], ['stock', 'Only items with stock'], ['all', 'All menu items']])}<span class="push actions">${csvBtn('ready')}${isStaff() ? '' : csvBtn('readyLedger', 'Export ledger')}<button class="btn primary" data-act="makeAhead">Make ahead</button></span></div>
   ${T([
     {h: 'Item', main: 1, f: p => `<b>${esc(p.name)}</b> ${p.category ? `<span class="muted small">${esc(p.category)}</span>` : ''}${p.active ? '' : ' ' + chip('Archived')}`},
-    {h: 'Default prep', f: p => prepOf(p) === 'premade' ? chip('Pre-made', 'info') : '<span class="small muted">À la minute</span>'},
+    {h: 'Default prep', f: p => prepOf(p) === 'premade' ? chip('Pre-made', 'info') : '<span class="small muted">Made-to-order</span>'},
     {h: 'Ready on hand', r: 1, f: p => `<b class="${oh(p) < 0 ? 'minus' : ''}">${fq(oh(p))}</b>`}, {h: 'Status', f: stat},
     ...(costs ? [{h: 'Cost each', r: 1, f: p => oh(p) || (rm[p.id] || {}).value ? peso(readyCost(p.id, p)) : '<span class="muted small">–</span>'}, {h: 'Value', r: 1, f: p => peso(val0(p))}] : []),
     {h: '', cls: 'act', f: p => `<span class="rowacts"><button class="btn sm" data-act="makeAhead" data-id="${p.id}">Make ahead</button>${can('invEdit') ? `<button class="btn sm" data-act="readyAdjust" data-id="${p.id}">Adjust</button>` : ''}<button class="btn sm ghost" data-act="wasteItems" data-id="${p.id}" data-prep="premade">Waste</button></span>`}
@@ -1853,6 +1879,7 @@ function makeAhead(pid) {
     <input name="mq[]" inputmode="decimal" min="0" max="1000" placeholder="Qty" aria-label="How many" value="${l.qty ?? ''}"><span class="u">servings</span><button type="button" class="btn sm ghost" data-act="rmLine" aria-label="Remove">×</button></div>`;
   modal({title: 'Make ahead', submit: 'Add to ready-to-serve', wide: true,
     body: `<p style="margin:0">Record items you’ve already made. They’re added to <b>ready-to-serve stock</b>, and their ingredients come out of <b>raw stock</b> using each item’s current recipe.</p>
+      <p class="hint remind" style="margin:0">${ic('info')} Enter <b>servings (portions)</b>, not batches: a pot that makes 20 portions is 20.</p>
       <div class="lines" id="mlines">${row({pid, qty: ''})}</div>
       <button type="button" class="btn sm" data-act="addMakeLine">${ic('plus')}Add another item</button>
       <div class="g2"><label class="f">Made at<input type="datetime-local" name="when" value="${nowLocal()}" ${staff ? `min="${staffWin()}T00:00"` : ''} max="${today()}T23:59"></label><label class="f">Note <small>Optional</small><input name="note" placeholder="e.g. Morning batch"></label></div>
@@ -2081,14 +2108,15 @@ VIEWS.recipes = () => {
     [['name', 'Item'], ['category', 'Category'], ['price', 'Price'], ['prep', 'Default prep type'], ['version', 'Version'], ['ingredients', 'Ingredients per serving'], ['cost', 'Cost now'], ['margin', 'Margin %'], ['active', 'On menu']]);
   regCsv('versions', 'recipe-versions', () => q('SELECT p.name, v.version, v.price, v.lines, v.note, v.created_at FROM recipe_versions v JOIN products p ON p.id=v.product_id ORDER BY p.name, v.version').map(v => ({...v, lines: (J(v.lines) || []).map(l => `${l.qty} ${l.unit} ${l.name}`).join('; ')})),
     [['name', 'Item'], ['version', 'Version'], ['price', 'Price'], ['lines', 'Ingredients'], ['note', 'What changed'], ['created_at', 'Saved']]);
-  return hdr + `<div class="bar-row">${search('rec.q', 'Item or category')}${fSelect('rec.archived', 'Show', [['', 'On the menu'], ['1', 'Include archived']])}<span class="push actions">${csvBtn('recipes')}${csvBtn('versions', 'Export versions')}</span></div>
+  return hdr + `<p class="hint remind" style="margin:0 0 12px">${ic('info')} Each recipe is <b>one serving</b> (not a batch), and its price is the <b>retail (selling) price</b> of that serving.</p>
+  <div class="bar-row">${search('rec.q', 'Item or category')}${fSelect('rec.archived', 'Show', [['', 'On the menu'], ['1', 'Include archived']])}<span class="push actions">${csvBtn('recipes')}${csvBtn('versions', 'Export versions')}</span></div>
   ${bulkBar('rec', [['bulkPrice', 'Change prices'], ['wasteSel', 'Record as wasted'], ['bulkArchiveRec', 'Restore'], ['bulkArchiveRec', 'Archive', 'warn']], 'item').replace('data-act="bulkArchiveRec" data-k="rec">Restore', 'data-act="bulkArchiveRec" data-k="rec" data-v="restore">Restore')}
   ${T([selCol('rec', list),
     {h: 'Item', main: 1, f: p => `<b>${esc(p.name)}</b> ${p.category ? `<span class="muted small">${esc(p.category)}</span>` : ''} ${p.active ? '' : chip('Archived')}`},
     {h: 'Per serving', f: p => `<span class="small">${p.lines.map(l => `${fq(l.qty)} ${esc((ingMap[l.ingredient_id] || l).unit)} ${esc((ingMap[l.ingredient_id] || l).name)}`).join(', ') || '<span class="muted">no ingredients</span>'}</span>`},
     {h: 'Price', r: 1, f: p => peso(p.price)}, {h: 'Cost now', r: 1, f: p => peso(recipeCost(p.lines, ingMap))},
     {h: 'Margin', r: 1, f: p => { const mg = p.price ? Math.round((1 - recipeCost(p.lines, ingMap) / p.price) * 100) : 0; return chip(mg + '%', mg >= 60 ? 'ok' : mg >= 40 ? 'warn' : 'bad'); }},
-    {h: 'Prep', f: p => prepOf(p) === 'premade' ? chip('Pre-made', 'info') + `<div class="small muted">${fq(readyQty(p.id))} ready</div>` : '<span class="small muted">À la minute</span>'},
+    {h: 'Prep', f: p => prepOf(p) === 'premade' ? chip('Pre-made', 'info') + `<div class="small muted">${fq(readyQty(p.id))} ready</div>` : '<span class="small muted">Made-to-order</span>'},
     {h: 'Version', f: p => 'v' + p.version},
     {h: '', cls: 'act', f: p => `<button class="btn sm" data-act="editRecipe" data-id="${p.id}">Edit</button> <button class="btn sm ghost" data-act="versions" data-id="${p.id}">Versions</button>`}
   ], list, {empty: empty('Nothing matches', 'Clear the search to see all recipes.')})}`;
@@ -2106,10 +2134,10 @@ function editRecipe(id) {
   modal({title: p ? `Edit ${p.name}` : 'Add a recipe', submit: p ? 'Save' : 'Add recipe', wide: true,
     body: `<div class="g3"><label class="f">Name<input name="name" required value="${esc(p ? p.name : '')}" placeholder="e.g. Spanish Latte (16 oz)"></label>
       <label class="f">Category<input name="category" list="pcats" value="${esc(p ? p.category || '' : '')}" placeholder="Iced coffee, Non-coffee"></label>
-      <label class="f">Price (₱)<input name="price" inputmode="decimal" min="0" required value="${p ? p.price : ''}"></label></div>
+      <label class="f">Price (₱) <small>Retail (selling) price for one serving</small><input name="price" inputmode="decimal" min="0" required value="${p ? p.price : ''}"></label></div>
       <label class="f">Default prep type <small>What a new order line starts as; it can be switched on each order</small><select name="prep_default">${opts(Object.entries(PREP).map(([k, v]) => [k, k === 'premade' ? v + ' (from ready-to-serve stock)' : v + ' (made when ordered)']), p ? prepOf(p) : 'alaminute')}</select></label>
       <datalist id="pcats">${[...new Set(products(true).map(x => x.category).filter(Boolean))].map(c => `<option value="${esc(c)}">`).join('')}</datalist>
-      <div><div style="font-size:13px;font-weight:600;color:var(--ink-2);margin-bottom:8px">Ingredients for one serving</div><div class="lines" id="lines">${lines.map(l => lineRow(ings, l)).join('')}</div>
+      <div><div style="font-size:13px;font-weight:600;color:var(--ink-2);margin-bottom:4px">Ingredients for one serving</div><p class="hint remind" style="margin:0 0 8px">${ic('info')} A recipe is always <b>per serving, not per batch</b>. If you cook a batch of 20 portions, divide each ingredient by 20.</p><div class="lines" id="lines">${lines.map(l => lineRow(ings, l)).join('')}</div>
       <button type="button" class="btn sm" style="margin-top:10px" data-act="addLine">${ic('plus')}Add ingredient</button></div>
       <div class="note info" id="rcost"></div>
       ${p ? `<label class="f">What changed? <small>Saved with the new version</small><input name="note" placeholder="e.g. Less syrup, new price"></label>
@@ -4151,7 +4179,7 @@ const WASTE_REASONS = ['Spilled or dropped', 'Remade (wrong or bad item)', 'Cust
 function wasteRow(prods, l = {}) {
   const pr = l.prep || prepOf(prods.find(p => p.id === l.pid));
   return `<div class="lrow wrow"><select name="wp[]" aria-label="Menu item"><option value="">Choose item…</option>${prods.map(p => `<option value="${p.id}" data-prep="${prepOf(p)}"${p.id === l.pid ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
-  <input name="wq[]" inputmode="decimal" min="0" max="1000" placeholder="Qty" aria-label="How many" value="${l.qty ?? 1}"><select name="wprep[]" aria-label="Where it came from" class="wprep"><option value="alaminute"${pr !== 'premade' ? ' selected' : ''}>Made fresh (raw)</option><option value="premade"${pr === 'premade' ? ' selected' : ''}>Ready-to-serve</option></select><button type="button" class="btn sm ghost" data-act="rmLine" aria-label="Remove">×</button></div>`;
+  <input name="wq[]" inputmode="decimal" min="0" max="1000" placeholder="Qty" aria-label="How many" value="${l.qty ?? 1}"><select name="wprep[]" aria-label="Where it came from" class="wprep"><option value="alaminute"${pr !== 'premade' ? ' selected' : ''}>Made-to-order (raw)</option><option value="premade"${pr === 'premade' ? ' selected' : ''}>Ready-to-serve</option></select><button type="button" class="btn sm ghost" data-act="rmLine" aria-label="Remove">×</button></div>`;
 }
 // picking an item sets where it came from to that item's default prep type
 document.addEventListener('change', e => { const sel = e.target; if (sel.name !== 'wp[]') return; const o = sel.selectedOptions[0], w = sel.closest('.wrow') && sel.closest('.wrow').querySelector('.wprep'); if (o && w && o.dataset.prep) { w.value = o.dataset.prep; w.dispatchEvent(new Event('change', {bubbles: true})); } });
@@ -4161,7 +4189,7 @@ function wasteItems(pid, prep0) {
   if (isStaff()) return wasteItemsStaff(prods, pid, prep0);
   const ingMap = ingIndex();
   modal({title: 'Record wasted items', submit: 'Record waste', wide: true,
-    body: `<p style="margin:0">Pick the menu items that were wasted. Items made fresh write off every ingredient in their current recipe from raw stock; items from ready-to-serve stock are written off there.</p>
+    body: `<p style="margin:0">Pick the menu items that were wasted. Made-to-order items write off every ingredient in their current recipe from raw stock; items from ready-to-serve stock are written off there.</p>
       <div class="lines" id="wlines">${wasteRow(prods, {pid, prep: prep0})}</div>
       <button type="button" class="btn sm" data-act="addWasteLine">${ic('plus')}Add another item</button>
       <div class="g2"><label class="f">Reason<select name="reason">${opts(WASTE_REASONS)}</select></label><label class="f">When<input type="datetime-local" name="when" value="${nowLocal()}" max="${today()}T23:59"></label></div>
@@ -4208,7 +4236,7 @@ function wasteItems(pid, prep0) {
 
 function wasteItemsStaff(prods, pid, prep0) {
   modal({title: 'Record wasted items', submit: 'Record waste', wide: true,
-    body: `<p style="margin:0">Pick the menu items that were wasted. Items made fresh have their ingredients written off from raw stock; items from ready-to-serve stock are written off there.</p>
+    body: `<p style="margin:0">Pick the menu items that were wasted. Made-to-order items have their ingredients written off from raw stock; items from ready-to-serve stock are written off there.</p>
       <div class="lines" id="wlines">${wasteRow(prods, {pid, prep: prep0})}</div>
       <button type="button" class="btn sm" data-act="addWasteLine">${ic('plus')}Add another item</button>
       <div class="g2"><label class="f">Reason<select name="reason">${opts(WASTE_REASONS)}</select></label><label class="f">When<input type="datetime-local" name="when" value="${nowLocal()}" min="${staffWin()}T00:00" max="${today()}T23:59"></label></div>
@@ -4963,7 +4991,7 @@ async function importRecipes(file) {
     const name = g('item').replace(/\s+/g, ' '); if (!name) return;
     const key = name.toLowerCase(), x = groups.get(key) || {name, category: '', price: '', lines: [], problems: []};
     if (g('category') && !x.category) x.category = g('category');
-    if (g('prep')) { const pv = /^(pre|ready|made ahead)/i.test(g('prep')) ? 'premade' : /(minute|fresh|order)/i.test(g('prep')) ? 'alaminute' : ''; if (!pv) { if (!x.problems.includes(`prep type “${g('prep')}” isn’t À la minute or Pre-made`)) x.problems.push(`prep type “${g('prep')}” isn’t À la minute or Pre-made`); } else if (x.prep && x.prep !== pv) { if (!x.problems.includes('different prep types on different rows')) x.problems.push('different prep types on different rows'); } else x.prep = pv; }
+    if (g('prep')) { const pv = /^(pre|ready|made ahead)/i.test(g('prep')) ? 'premade' : /(to.?order|minute|fresh|order)/i.test(g('prep')) ? 'alaminute' : ''; if (!pv) { if (!x.problems.includes(`prep type “${g('prep')}” isn’t Made-to-order or Pre-made`)) x.problems.push(`prep type “${g('prep')}” isn’t Made-to-order or Pre-made`); } else if (x.prep && x.prep !== pv) { if (!x.problems.includes('different prep types on different rows')) x.problems.push('different prep types on different rows'); } else x.prep = pv; }
     if (g('price') !== '') { if (x.price === '') x.price = g('price'); else if (numStrict(g('price')) !== numStrict(x.price) && !x.problems.includes('different prices on different rows')) x.problems.push('different prices on different rows'); }
     const iname = g('ingredient');
     if (iname) {
@@ -6024,7 +6052,7 @@ const ACT = {
   resetSample: () => resetSample().catch(e => toast(e.message, 'err')), downloadOnline: () => { downloadOnlineCopy(S.cloudCfg); toast('Downloaded lebean-manager.html. Open it on the new device and log in.'); },
   addExpense: d => addExpense(d.id ? +d.id : null, d.dir), expView: d => expView(+d.id), voidExp: d => voidExpenses([+d.id]), bulkVoidExp: () => voidExpenses(selected('exp')),
   bulkExpCsv: () => { const ids = selected('exp'); saveCsv('selected-expenses', q(`SELECT * FROM expenses WHERE id IN (${ids.map(Number).join(',') || 0}) ORDER BY date`).map(S.expMap), S.expCols); },
-  cfMode: d => { S.f['cf.' + d.k] = d.v; renderView(); }, importRec: () => modal({title: 'Import recipes', body: `<p style="margin:0">Add or update menu items from a CSV file (save one from Excel or Google Sheets with “Save as CSV”). Use one row per ingredient: <b>Item</b>, <b>Ingredient</b>, <b>Qty per serving</b>, plus Price and Category on any row of that item. Unit is optional and only checked.</p>
+  cfMode: d => { S.f['cf.' + d.k] = d.v; renderView(); }, importRec: () => modal({title: 'Import recipes', body: `<p class="hint remind" style="margin:0 0 8px">${ic('info')} Quantities are <b>per serving</b> (not per batch), and Price is the <b>retail (selling) price</b>.</p><p style="margin:0">Add or update menu items from a CSV file (save one from Excel or Google Sheets with “Save as CSV”). Use one row per ingredient: <b>Item</b>, <b>Ingredient</b>, <b>Qty per serving</b>, plus Price and Category on any row of that item. Unit is optional and only checked.</p>
     <p style="margin:0">Ingredients must already exist in Inventory. A changed recipe or price is saved as a new version, so past orders keep the version they used.</p><p class="hint" style="margin:0">Tip: download your current recipes, edit them in a spreadsheet, and import the file back.</p>`,
     footer: `<button type="button" class="btn left" data-act="recipeTemplate">${ic('dl')}${products().length ? 'Download current recipes' : 'Download template'}</button><button type="button" class="btn primary" data-act="importRecPick">Choose CSV file</button>`}),
   importRecPick: () => { const i = $('#csvFile') || Object.assign(document.body.appendChild(document.createElement('input')), {type: 'file', id: 'csvFile', accept: '.csv,text/csv', hidden: true}); i.value = ''; i.onchange = () => i.files[0] && importRecipes(i.files[0]); i.click(); }, recipeTemplate: () => recipeTemplate(),
@@ -6049,7 +6077,8 @@ const ACT = {
   rmLine: (d, b) => { const f = b.closest('form'); b.closest('.lrow').remove(); f._upd && f._upd(); },
   posCat: d => { S.f['pos.cat'] = d.v; renderView(); },
   posNow: () => { delete S.f['pos.when']; renderView(); },
-  cartAdd: d => { const pr = prepOf(products(true).find(x => x.id === +d.id)), c = S.cart.find(x => x.pid === +d.id && x.prep === pr); if (c) c.qty++; else S.cart.push({pid: +d.id, qty: 1, prep: pr}); S.flash = +d.id; renderView(); renderNav(); },
+  cartAdd: d => cartPut(+d.id, prepOf(products(true).find(x => x.id === +d.id))),
+  cartAddPrep: d => cartPut(+d.id, d.v === 'premade' ? 'premade' : 'alaminute'),
   cartPrep: d => { const c = S.cart[+d.i]; if (!c || c.prep === d.v) return; const tw = S.cart.find(x => x !== c && x.pid === c.pid && x.prep === d.v); if (tw) { tw.qty += c.qty; S.cart.splice(+d.i, 1); } else c.prep = d.v; renderView(); },
   cartSplit: d => { const c = S.cart[+d.i]; if (!c || c.qty < 2) return; const o = otherPrep(c.prep), tw = S.cart.find(x => x.pid === c.pid && x.prep === o); c.qty--; if (tw) tw.qty++; else S.cart.splice(+d.i + 1, 0, {pid: c.pid, qty: 1, prep: o}); renderView(); },
   cartInc: d => { S.cart[+d.i].qty++; renderView(); renderNav(); },
@@ -6091,6 +6120,7 @@ document.addEventListener('click', e => {
     if (r && r.then) { const sp = b.classList.contains('btn') && !b.classList.contains('busy'); if (sp) b.classList.add('busy'); r.catch(err => { toast(err.message, 'err'); console.error(err); }).finally(() => sp && b.classList.remove('busy')); }
   } catch (err) { toast(err.message, 'err'); console.error(err); }
 });
+document.addEventListener('keydown', e => { const el = e.target; if ((e.key === 'Enter' || e.key === ' ') && el.matches && el.matches('[role=button][data-act]')) { e.preventDefault(); el.click(); } });
 document.addEventListener('input', e => {
   const k = e.target.dataset && e.target.dataset.f; if (!k) return;
   S.f[k] = e.target.value;
@@ -6136,11 +6166,12 @@ const GT = {
       staff: {attendance: 'The daily sheet and a summary for any period.', employees: 'Your team and their pay terms. Every pay change is kept as a version.', leaves: 'Filed leaves, paid or unpaid. They show on the attendance sheet and in payroll.',
         adjustments: 'Bonuses, allowances, manual overtime or undertime, cash advances and deductions. Open ones go into the next payroll.', payroll: 'Payroll runs: calculate a draft, review payslips, then finalize to lock it.'},
       att: {sheet: 'Mark each person’s status and clock times for one day.', summary: 'Present, late, absent, hours and overtime for any period, plus a calendar.'}},
-    cartAdd: 'Add one to the order. It starts with this item’s default prep type.', cartInc: 'One more of this line.', cartDec: 'One less of this line. At zero it’s removed.', cartClear: 'Empty the current order.',
-    cartPrep: 'À la minute: made now, so ingredients come out of raw stock. Pre-made: taken from ready-to-serve stock.', cartSplit: 'Move one of these to the other prep type, so the same item can be some of each.',
-    checkout: 'Save the order. Stock is updated: raw for à la minute lines, ready-to-serve for pre-made lines.', posNow: 'Set the order time back to now.', posCat: 'Show only this category.',
+    cartAdd: 'Add one to the order with this item’s default prep type (the highlighted button). Tap the other button to add it the other way.',
+    cartAddPrep: 'Add one, prepared this way. Pre-made comes from ready-to-serve stock; made-to-order uses ingredients from raw stock.', cartInc: 'One more of this line.', cartDec: 'One less of this line. At zero it’s removed.', cartClear: 'Empty the current order.',
+    cartPrep: 'Made-to-order: made now, so ingredients come out of raw stock. Pre-made: taken from ready-to-serve stock.', cartSplit: 'Move one of these to the other prep type, so the same item can be some of each.',
+    checkout: 'Save the order. Stock is updated: raw for made-to-order lines, ready-to-serve for pre-made lines.', posNow: 'Set the order time back to now.', posCat: 'Show only this category.',
     restock: 'Record a delivery. Enter what you paid and the cost per unit is worked out.', adjust: 'Fix raw stock after a count, record waste, or add or remove an amount.', addIngredient: 'Add something you stock, with the unit you count it in.',
-    editIngredient: 'Change the name, unit, category, reorder level or cost. Changes are kept as versions.', wasteItems: 'Write off spilled, dropped or spoiled menu items. Fresh ones use their recipe; ready-to-serve ones come off that stock.',
+    editIngredient: 'Change the name, unit, category, reorder level or cost. Changes are kept as versions.', wasteItems: 'Write off spilled, dropped or spoiled menu items. Made-to-order ones use their recipe; ready-to-serve ones come off that stock.',
     makeAhead: 'Record items you’ve already made. They go into ready-to-serve stock and their ingredients come out of raw stock.', readyAdjust: 'Count, waste or correct ready-to-serve stock. Doesn’t touch raw stock.',
     importIng: 'Add or update many ingredients at once from a CSV file.', importRec: 'Add or update many recipes at once from a CSV file.', ledgerFor: 'See every stock movement for this ingredient.', ingVersions: 'See every version of this ingredient.',
     moveView: 'Open this stock movement to see what caused it.', toBuy: 'Fill the purchase list from these amounts.', printBuy: 'Print the purchase list.',
@@ -6168,15 +6199,15 @@ const GT = {
     name: 'The name shown everywhere in the app.', unit: 'What you count it in: g, ml, pcs… Recipes and stock use this unit.', category: 'Optional grouping, used for filters and reports.',
     reorder_level: 'When stock falls to this, it shows as low on Overview and in Inventory.', unit_cost: 'What one unit costs. Restocks update it.', opening: 'How much you have right now. Recorded as opening stock.',
     qty: 'How much, in the unit shown.', cost: 'Optional. Total paid for the delivery, or the cost per unit; switch with the buttons above.', supplier: 'Optional, saved with the delivery.', ingredient_id: 'Which ingredient.',
-    price: 'The selling price. Changing it saves a new recipe version.', prep_default: 'À la minute: made when ordered (ingredients out of raw stock). Pre-made: sold from ready-to-serve stock. Each order line can be switched.',
-    'qty[]': 'How much of this ingredient one serving uses, in its unit.', 'ing[]': 'An ingredient from Inventory.',
+    price: 'The retail (selling) price of one serving. Changing it saves a new recipe version.', prep_default: 'Made-to-order: made when ordered (ingredients out of raw stock). Pre-made: sold from ready-to-serve stock. Each order line can be switched.',
+    'qty[]': 'How much of this ingredient ONE serving uses, in its unit (not a whole batch).', 'ing[]': 'An ingredient from Inventory.',
     daily: 'Paid for each day worked, before overtime and undertime.', reg: 'Hours a day that count as a full day. More is overtime; fewer is undertime.', brk: 'Unpaid break each day, taken out of clocked hours.',
     ot: 'Added for each hour worked over the regular hours.', ut: 'Taken off for each hour short of the regular hours.', leave_credits: 'Paid leave days a year.', start_date: 'First day of work. Also when the first pay terms start.',
     effective_date: 'Days from this date use the new pay terms; earlier days keep the old ones.', kind: 'What kind of adjustment. Earnings add to pay; deductions take from it.',
     amount: 'Amount in pesos.', hours: 'For manual overtime or undertime: priced at each person’s rate on that date.', days: 'Days of leave. Use 0.5 for a half day.', paid: 'Paid leave uses leave credits and is paid in payroll.',
     s: 'First day of the payroll period.', e: 'Last day of the payroll period.', reason: 'Saved in History so the change can be explained later.', note: 'Optional, saved with the record.',
-    mode: 'Counted amount sets stock to what you counted. Waste removes and writes off. Add or remove changes by an amount.', 'mq[]': 'Servings you made.', 'mp[]': 'The menu item you made ahead.',
-    'wp[]': 'The menu item that was wasted.', 'wq[]': 'How many were wasted.', 'wprep[]': 'Made fresh: its ingredients come off raw stock. Ready-to-serve: it comes off that stock.',
+    mode: 'Counted amount sets stock to what you counted. Waste removes and writes off. Add or remove changes by an amount.', 'mq[]': 'Servings (portions) you made, not batches.', 'mp[]': 'The menu item you made ahead.',
+    'wp[]': 'The menu item that was wasted.', 'wq[]': 'How many were wasted.', 'wprep[]': 'Made-to-order: its ingredients come off raw stock. Ready-to-serve: it comes off that stock.',
     when: 'When it happened.', tin: 'Clock-in time.', tout: 'Clock-out time.', status: 'Present, late, half day, absent or rest day.', description: 'Optional details, like “October rent”.',
     payment: 'How it was paid or received.', repeat: 'Also add it to Recurring so it’s offered every month.', day: 'Day of the month it’s due (1 to 28).', business: 'Your shop name, shown on receipts, reports and payslips.',
     channels: 'Where orders come from, separated by commas.', payments: 'Payment methods, separated by commas.', confirm: 'Type the word shown to confirm.'},
@@ -6186,8 +6217,8 @@ const GT = {
     'inventory:On hand': 'What the app has now: the total of every movement in the ledger.', 'inventory:Status': 'OK, low (at or below the reorder level), out, or for ready-to-serve: ready, none ready or negative.', 'Last cost': 'Cost per unit from the latest restock or edit.',
     'orders:Status': 'Completed, or voided (kept in the list; its stock was returned).', 'staff:Status': 'Present, late, half day, absent or rest day.', 'cashflow:Status': 'Active, or voided (kept for the record).',
     'Value': 'On hand × cost.', 'Version': 'Each change is kept as a version. Tap to see them all.', 'Ready on hand': 'Servings made ahead and not sold yet. Below zero means more were sold as pre-made than recorded as made.',
-    'Default prep': 'What new order lines for this item start as.', 'Prep': 'À la minute (made when ordered) or Pre-made (from ready-to-serve stock).', 'Cost each': 'What one serving cost to make, averaged over what’s on hand.',
-    'Price': 'Selling price.', 'Cost now': 'Ingredient cost per serving at today’s ingredient costs.', 'Margin': 'Share of the price left after ingredient cost.', 'Per serving': 'Ingredients one serving uses.',
+    'Default prep': 'What new order lines for this item start as.', 'Prep': 'Made-to-order (made when ordered) or Pre-made (from ready-to-serve stock).', 'Cost each': 'What one serving cost to make, averaged over what’s on hand.',
+    'Price': 'Retail (selling) price of one serving.', 'Per serving': 'Ingredients one serving uses (recipes are per serving, not per batch).', 'Cost now': 'Ingredient cost per serving at today’s ingredient costs.', 'Margin': 'Share of the price left after ingredient cost.', 
     'Break': 'Unpaid break from this person’s pay terms.', 'Worked': 'Clocked hours minus the unpaid break.', 'OT / UT': 'Overtime or undertime against this person’s regular hours.',
     'staff:Days': 'Days worked in the period (half days count as 0.5).', 'OT hrs': 'Overtime hours.', 'UT hrs': 'Undertime hours.', 'Base': 'Daily rate × days worked.', 'OT pay': 'Overtime hours × overtime rate.',
     'Undertime': 'Undertime hours × undertime rate, taken off.', 'Leave pay': 'Paid leave days × daily rate.', 'Adjustments': 'Bonuses, allowances and deductions added after gross pay.', 'Net pay': 'Gross pay plus adjustments.',
@@ -6236,6 +6267,74 @@ new MutationObserver(() => { window.hideGuideTip && window.hideGuideTip(); if (g
   document.addEventListener('touchend', () => { pressed = false; clearTimeout(timer); if (cur) setTimeout(hide, 2600); }, {passive: true});
   document.addEventListener('click', e => { if (swallow) { swallow = false; e.preventDefault(); e.stopPropagation(); } }, true);
   document.addEventListener('contextmenu', e => { if (cur || pressed) e.preventDefault(); });
+})();
+
+/* ================= searchable dropdowns: every <select> opens a list you can filter by typing ================= */
+(() => {
+  let box = null, sel = null, items = [], hi = -1;
+  const norm = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const usable = el => el && el.tagName === 'SELECT' && !el.multiple && !el.disabled && el.options.length > 0;
+  const close = (refocus) => { if (!box) return; box.remove(); box = null; const s0 = sel; sel = null; items = []; if (refocus && s0) s0.focus({preventScroll: true}); };
+  const pick = i => {
+    const it = items[i]; if (!it || it.dis) return;
+    const s0 = sel; close(true);
+    if (s0.value !== it.val) { s0.value = it.val; s0.dispatchEvent(new Event('input', {bubbles: true})); s0.dispatchEvent(new Event('change', {bubbles: true})); }
+  };
+  const paint = qv => {
+    const q0 = norm(qv), list = box.querySelector('.ssl'); let html = '', n = 0, firstHit = -1, lastGroup = null;
+    items.forEach((it, i) => {
+      const t = norm(it.text), show = !q0 || t.includes(q0) || t.split(/[\s(,/–-]+/).some(w => w.startsWith(q0));
+      it.shown = show; if (!show) return;
+      if (it.group !== lastGroup && it.group) html += `<div class="ssg">${esc(it.group)}</div>`; lastGroup = it.group;
+      if (firstHit < 0 && !it.dis) firstHit = i;
+      html += `<div class="sso${it.val === sel.value ? ' cur' : ''}${it.dis ? ' dis' : ''}" role="option" data-i="${i}" aria-selected="${it.val === sel.value}">${esc(it.text) || '&nbsp;'}</div>`; n++;
+    });
+    list.innerHTML = html || '<div class="ssn">No matches</div>';
+    hi = q0 ? firstHit : items.findIndex(it => it.val === sel.value && it.shown); mark();
+  };
+  const mark = () => { box.querySelectorAll('.sso').forEach(o => o.classList.toggle('hi', +o.dataset.i === hi)); const h = box.querySelector('.sso.hi'); if (h) h.scrollIntoView({block: 'nearest'}); };
+  const move = d => { const vis = items.map((it, i) => it.shown && !it.dis ? i : -1).filter(i => i >= 0); if (!vis.length) return; const k = vis.indexOf(hi); hi = vis[k < 0 ? (d > 0 ? 0 : vis.length - 1) : Math.max(0, Math.min(vis.length - 1, k + d))]; mark(); };
+  const place = () => {
+    if (!box || !sel) return;
+    const r = sel.getBoundingClientRect(), phone = innerWidth < 600, w = phone ? Math.min(innerWidth - 16, 420) : Math.max(r.width, 240);
+    box.style.width = w + 'px';
+    const left = phone ? (innerWidth - w) / 2 : Math.min(innerWidth - w - 8, Math.max(8, r.left));
+    const below = innerHeight - r.bottom - 8, above = r.top - 8, maxH = Math.min(340, Math.max(below, above) - 6);
+    box.style.left = left + 'px'; box.querySelector('.ssl').style.maxHeight = Math.max(120, maxH - 52) + 'px';
+    if (below >= Math.min(260, above) || below >= 200) { box.style.top = (r.bottom + 4) + 'px'; box.style.bottom = ''; } else { box.style.top = ''; box.style.bottom = (innerHeight - r.top + 4) + 'px'; }
+  };
+  const open = (el, first = '') => {
+    close(); sel = el;
+    items = []; [...el.children].forEach(c => { if (c.tagName === 'OPTGROUP') [...c.children].forEach(o => items.push({val: o.value, text: o.textContent, dis: o.disabled, group: c.label})); else if (c.tagName === 'OPTION') items.push({val: c.value, text: c.textContent, dis: c.disabled, group: null}); });
+    box = document.createElement('div'); box.className = 'ssbox'; box.setAttribute('role', 'listbox');
+    box.innerHTML = `<input class="ssq" type="text" autocomplete="off" spellcheck="false" placeholder="Type to search" aria-label="Search the options"><div class="ssl"></div>`;
+    ([...document.querySelectorAll('dialog[open]')].pop() || document.body).appendChild(box);
+    const qi = box.querySelector('.ssq'); qi.value = first; paint(first); place();
+    qi.focus({preventScroll: true}); if (first) qi.setSelectionRange(first.length, first.length);
+    qi.addEventListener('input', () => paint(qi.value));
+    qi.addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); move(1); } else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+      else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); if (hi >= 0) pick(hi); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(true); }
+      else if (e.key === 'Tab') close(false);
+    });
+    box.addEventListener('mousedown', e => { if (!e.target.closest('.ssq')) e.preventDefault(); });
+    box.addEventListener('click', e => { const o = e.target.closest('.sso'); if (o) pick(+o.dataset.i); });
+    box.addEventListener('mousemove', e => { const o = e.target.closest('.sso'); if (o && +o.dataset.i !== hi && !o.classList.contains('dis')) { hi = +o.dataset.i; mark(); } });
+  };
+  window.closeSelectSearch = () => close(false);
+  // open instead of the browser's own list
+  document.addEventListener('mousedown', e => { if (box && !box.contains(e.target)) close(false); const el = e.target.closest && e.target.closest('select'); if (usable(el) && e.button === 0) { e.preventDefault(); el.focus({preventScroll: true}); open(el); } }, true);
+  document.addEventListener('touchend', e => { const el = e.target.closest && e.target.closest('select'); if (usable(el)) { e.preventDefault(); open(el); } }, {capture: true, passive: false});
+  document.addEventListener('keydown', e => {
+    const el = e.target; if (!usable(el) || box) return;
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && e.key !== ' ') { e.preventDefault(); open(el, e.key); }
+    else if (e.key === ' ' || e.key === 'Enter' || (e.altKey && e.key === 'ArrowDown') || e.key === 'F4') { e.preventDefault(); open(el); }
+  }, true);
+  addEventListener('resize', () => close(false));
+  addEventListener('scroll', e => { if (box && !box.contains(e.target)) place(); }, true);
+  // a redraw that removes the dropdown closes its list
+  new MutationObserver(() => { if (box && sel && !sel.isConnected) close(false); if (box && !box.isConnected) { box = null; sel = null; } }).observe(document.documentElement, {childList: true, subtree: true});
 })();
 /* chart tooltips: hover on desktop, tap on touch */
 (() => {
